@@ -1,0 +1,173 @@
+/*******************************************************************************
+*         McStas instrument definition URL=http://www.mcstas.org
+*
+* Instrument: LET
+*
+* %Identification
+* Written by: R. I. Bewley
+* Date: ?
+* Origin: <a href="http://www.isis.stfc.ac.uk">ISIS (UK)</a>
+*
+* Instrument short description:
+* The low energy transfer (LET) spectrometer at ISIS is a cold direct geometry
+* time-of-flight spectrometer, used for studying magnetic and lattice dynamics
+* in crystalline materials (single crystal and powders) and also quasi-elastic
+* neutron scattering in powders and liquids, optionally with polarisation
+* analysis. It has a large position sensitve detector array at L2=3.5 m,
+* covering scatting angles up to 140° horizontally and 30° vertically.
+*
+* %Example:
+*
+* %Parameters
+* INPUT PARAMETERS:
+* Ei              : energy selected by chopper [meV]
+* freq            : frequency of chopper rotation [Hz]
+* chopper         : chopper mode ["resolution" or "flux"]
+*
+* %End
+*******************************************************************************/
+
+DEFINE INSTRUMENT LET(Ei=1.89, freq=100, string chopper="resolution")
+
+DECLARE
+%{
+double v_foc;
+double phase_time, E_min, E_max;
+double PR, Res5, E_foc;
+double pha_offset = 0;
+double jitter = 0;
+double slot_size;
+int plate;
+%}
+
+INITIALIZE
+%{
+E_foc = Ei;
+v_foc = SE2V*sqrt(E_foc);
+fprintf(stderr, "\nv_foc: %f\n\n",v_foc);
+phase_time = 23.5 / v_foc + pha_offset;
+E_min = 2.28e-3 * 23.5 / (phase_time+1.e-3); E_min *= E_min;
+E_max = 2.28e-3 * 23.5 / (phase_time-1.e-3); E_max *= E_max;
+PR = freq / 2.;
+Res5 = freq;
+for (int ii=0; chopper[ii]; ii++)
+  chopper[ii] = tolower(chopper[ii]);
+if(strstr(chopper, "res"))
+  slot_size = 0.015;
+else if(strstr(chopper, "flux"))
+  slot_size = 0.031;
+else
+  slot_size = 0.020;
+fprintf(stderr, "Using mode %s with slot size = %f mm\n", chopper, slot_size);
+%}
+
+TRACE
+
+COMPONENT Origin = Arm()
+  AT (0,0,0) ABSOLUTE
+
+COMPONENT Source = ViewModISIS(
+    Face = "Let_Base.mcstas", E0 = E_min, E1 = E_max, dist = 1.68,
+    focus_xw = 0.04, focus_yh = 0.09, modPosition=0, xw=0.12, yh=0.12)
+  AT (0, 0, 0) RELATIVE Origin
+
+COMPONENT shutter = Guide_channeled(
+    w1 = 0.04, h1 = 0.09, w2 = 0.04, h2 = 0.09, l = 1.980, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 2, my = 3)
+  AT (0, 0, 1.680) RELATIVE Origin
+
+COMPONENT insert = Guide_channeled(
+    w1 = 0.04, h1 = 0.09, w2 = 0.04, h2 = 0.09, l = 2.500, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 2, my = 3)
+  AT (0, 0, 3.740) RELATIVE Origin
+
+COMPONENT afterinsert = Guide_channeled(
+    w1 = 0.04, h1 = 0.09, w2 = 0.04, h2 = 0.09, l = 1.514, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 2, my = 3)
+  AT (0, 0, 6.300) RELATIVE Origin
+
+COMPONENT Res1 = DiskChopper(
+    radius = 0.279, nu = PR/2.0, nslit=6, xwidth=0.04, yheight=0.09, jitter=jitter, delay=7.83/v_foc+pha_offset)
+  AT (0, 0, 7.83) RELATIVE Origin
+
+COMPONENT Res1_counter = DiskChopper(
+    radius = 0.279, nu = -PR/2.0, nslit=6, xwidth=0.04, yheight=0.09, jitter=jitter, delay=7.83/v_foc+pha_offset)
+  AT (0, 0, 7.8301) RELATIVE Origin
+
+COMPONENT betweenc1c2 = Guide_channeled(
+    w1 = 0.04, h1 = 0.09, w2 = 0.04, h2 = 0.09, l = 0.312, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 2, my = 3)
+  AT (0, 0, 7.852) RELATIVE Origin
+
+/*COMPONENT FO = Chopper(
+    R = 0.6, f = 10*2*PI, n=1, w=1.2, j=jitter, pha=8.2/v_foc+pha_offset)
+  AT (0, 0, 8.2) RELATIVE Origin*/
+
+COMPONENT betweenc2c2 = Guide_channeled(
+    w1 = 0.04, h1 = 0.09, w2 = 0.04, h2 = 0.09, l = 3.499, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 2, my = 3)
+  AT (0, 0, 8.236) RELATIVE Origin
+
+COMPONENT PR = DiskChopper(
+    radius = 0.29, nu = PR, nslit=2, xwidth=0.058, yheight=0.1, jitter=jitter, delay=11.75/v_foc+pha_offset)
+  AT (0, 0, 11.75) RELATIVE Origin
+/*  R = 0.29, f = PR*2*PI, n=2, w=0.058, j=jitter, pha=11.75/v_foc+pha_offset) */
+
+COMPONENT betweenc3c4 = Guide_channeled(
+    w1 = 0.04, h1 = 0.09, w2 = 0.04, h2 = 0.09, l = 3.886, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 2, my = 3)
+  AT (0, 0, 11.765) RELATIVE Origin
+
+COMPONENT CR = DiskChopper(
+    radius = 0.29, nu = Res5/2.0, nslit=6, xwidth=0.054, yheight=0.1, jitter=jitter, delay=15.66/v_foc+pha_offset)
+  AT (0, 0, 15.66) RELATIVE Origin
+/*  R = 0.29, f = Res5*PI, n=6, w=0.054, j=jitter, pha=15.66/v_foc+pha_offset) */
+
+COMPONENT betweenc4pol = Guide_channeled(
+    w1 = 0.04, h1 = 0.09, w2 = 0.04, h2 = 0.0639, l = 5.807, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 2, my = 3)
+  AT (0, 0, 15.681) RELATIVE Origin
+
+COMPONENT guide_move = Guide_channeled(
+    w1 = 0.04, h1 = 0.0639, w2 = 0.0311, h2 = 0.05718, l = 0.8823, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 4, my = 4)
+ AT (0, 0, 21.489) RELATIVE Origin
+
+COMPONENT funnel = Guide_channeled(
+    w1 = 0.031, h1 = 0.05711, w2 = 0.02, h2 = 0.04868, l = 1.117, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 4, my = 4)
+ AT (0, 0, 22.373) RELATIVE Origin
+
+COMPONENT C5 = DiskChopper(
+    radius = 0.279, nu = Res5, nslit=2, xwidth=slot_size, yheight=0.0487, jitter=jitter, delay=23.5/v_foc+pha_offset)
+  AT (0, 0, 23.5) RELATIVE Origin
+
+COMPONENT C5_counter = DiskChopper(
+    radius = 0.279, nu = -Res5, nslit=2, xwidth=slot_size, yheight=0.0487, jitter=jitter, delay=23.51/v_foc+pha_offset)
+  AT (0, 0, 23.51) RELATIVE Origin
+
+COMPONENT endguide = Guide_channeled(
+    w1 = 0.02, h1 =0.0484 , w2 = 0.020, h2 = 0.04, l = 1.1, alphax = 4.38, alphay = 4.38 ,
+ W=3e-3, mx = 4, my = 4)
+ AT (0, 0, 23.52) RELATIVE Origin
+
+COMPONENT snot = Guide_channeled(
+    w1 = 0.02, h1 =0.04 , w2 = 0.02, h2 = 0.04, l = 0.23, alphax = 4.38, alphay = 4.38 , //nslit=3,
+ W=3e-3, mx = 2, my = 4)
+ AT (0, 0, 24.622) RELATIVE Origin
+
+COMPONENT Sample_Position = Arm()
+  AT (0, 0, 25.0) RELATIVE Origin
+
+COMPONENT Sample = Incoherent(
+  radius = 0.02, yheight = 0.02, thickness = 0.005)
+  AT (0, 0, 0) RELATIVE Sample_Position
+
+// Keep it simple, ignore gaps between doors
+COMPONENT Detector = Monitor_nD(
+    options = "banana, auto t bins=200, theta limits[-39.4 139.8] bins=200",
+    filename = "Detector.dat",  radius=3.5,  yheight = 4.0)
+  AT (0, 0, 0) RELATIVE Sample_Position
+
+
+END

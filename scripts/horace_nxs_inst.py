@@ -1,7 +1,8 @@
 import nexusformat.nexus
 from nexusformat.nexus import NXFile, NXfield, NXdata, nxload, NXtransformations, \
                               NXslit, NXsource, NXmoderator, NXnote, NXbeam, \
-                              NXinstrument, NXfermi_chopper, NXdisk_chopper
+                              NXinstrument, NXfermi_chopper, NXdisk_chopper, \
+                              nxopen, NXentry, NXcollection, NXsample
 import numpy as np
 import scipy.io
 import copy
@@ -10,34 +11,35 @@ import os
 
 INST_TABLES = scipy.io.loadmat('inst_tables.mat')
 
-def copyfile(infile, outfile):
+def create_inst_nxs(outfile, inst_fun, ei):
     n = 5
-    spe = copy.deepcopy(nxload(infile, mode='r'))
-    dnew = copy.deepcopy(spe['w1/data'])
-    for ff in ['azimuthal', 'azimuthal_width', 'polar', 'polar_width', 'distance', 'energy']:
-        dnew[ff].replace(dnew[ff][:n])
-    for ff in ['data', 'error']:
-        dnew[ff].replace(dnew[ff][:n, :n])
-    dnew['data'].axes = 'polar:energy'
-    dnew['data'].signal = 1
-    del spe['w1']['data']
-    spe['w1/data'] = dnew
-    with NXFile(outfile, 'w') as f:
-        f.writefile(spe)
+    with nxopen(outfile, 'w') as root:
+        root['w1'] = NXentry()
+        root['w1/NXSPE_info'] = NXcollection(fixed_energy=NXfield(ei, units='meV'),
+                                             ki_over_kf_scaling=True,
+                                             psi=NXfield(np.nan, units='degrees'))
+        root['w1/definition'] = NXfield('NXSPE', version='1.3')
+        root['w1/program_name'] = NXfield('eniius', version='0.1')
+        root['w1/sample'] = NXsample()
+        root['w1/data'] = create_data(n, ei)
+        root['w1/instrument'] = inst_fun(ei)
 
-def let_instrument(*args):
-    infile = args[0]
-    if len(args) > 1:
-        outfile = args[1]
-    else:
-        outfile = infile + '_out'
-    if infile != outfile:
-        copyfile(infile, outfile)
-        infile = outfile
-    spe = nxload(infile, mode='rw')
-    inst = spe['w1/instrument']
-    inst['name'].replace(NXfield(value='LET', short_name='LET'))
-    inst['fermi'].energy = 3.7
+def create_data(n, ei):
+    dmat = np.random.rand(n, n)
+    emat = np.random.rand(n, n) / 10.
+    th = np.linspace(-25, 120, n)
+    phi = np.zeros(n)
+    en = np.linspace(ei/20, ei*0.9, n)
+    wd = np.ones(n) / 10.
+    dd = np.ones(n) * 4.
+    dat = NXdata(data=NXfield(dmat, axes='polar:energy', signal=1), error=emat,
+                 errors=emat, energy=NXfield(en, units='meV'),
+                 azimuthal=th, azimuthal_width=wd, polar=phi, polar_width=wd, distance=dd)
+    return dat
+
+def let_instrument(ei):
+    inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
+    inst['name'] = NXfield(value='LET', short_name='LET')
     m_ = {'units':'metre'}
     # Defines the Source
     inst['source'] = NXsource(Name='ISIS', type='Spallation Neutron Source',
@@ -69,20 +71,11 @@ def let_instrument(*args):
     sl = np.rad2deg(np.arctan2(0.031, 0.28) / 2.)
     inst['mono_chopper'] = NXdisk_chopper(rotation_speed=NXfield(240., units='hertz'), radius=NXfield(0.28, **m_),
                                           type='contra_rotating_pair', slit_edges=[-sl, sl], transforms=d_ch5)
-    print(spe.tree)
-    spe.close()
+    return inst
 
-def maps_instrument(*args):
-    infile = args[0]
-    if len(args) > 1:
-        outfile = args[1]
-    else:
-        outfile = infile + '_out'
-    if infile != outfile:
-        copyfile(infile, outfile)
-        infile = outfile
-    spe = nxload(infile, mode='rw')
-    inst = spe['w1/instrument']
+def maps_instrument(ei):
+    inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
+    inst['name'] = NXfield(value='MAPS', short_name='MAPS')
     m_ = {'units':'metre'}
     # Defines the Fermi chopper
     fermi = inst['fermi']
@@ -109,20 +102,11 @@ def maps_instrument(*args):
                    axes=NXfield(INST_TABLES['maps_mod'][:,0], unit='microsecond', name='Time'))
     inst['moderator'] = NXmoderator(type='H20', temperature=NXfield(300, units='kelvin'),
                                     pulse_shape=pulse, transforms=d_mod)
-    print(spe.tree)
-    spe.close()
+    return inst
 
-def merlin_instrument(*args):
-    infile = args[0]
-    if len(args) > 1:
-        outfile = args[1]
-    else:
-        outfile = infile + '_out'
-    if infile != outfile:
-        copyfile(infile, outfile)
-        infile = outfile
-    spe = nxload(infile, mode='rw')
-    inst = spe['w1/instrument']
+def merlin_instrument(ei):
+    inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
+    inst['name'] = NXfield(value='MERLIN', short_name='MER')
     m_ = {'units':'metre'}
     # Defines the Fermi chopper
     inst['name'].replace(NXfield(value='MERLIN', short_name='MER'))
@@ -151,10 +135,9 @@ def merlin_instrument(*args):
                    axes=NXfield(INST_TABLES['merlin_mod'][:,0], unit='microsecond', name='Time'))
     inst['moderator'] = NXmoderator(type='H20', temperature=NXfield(300, units='kelvin'),
                                     pulse_shape=pulse, transforms=d_mod)
-    print(spe.tree)
-    spe.close()
+    return inst
 
 if __name__ == '__main__':
-    merlin_instrument(sys.argv[1], 'merlin_inst.nxspe')
-    maps_instrument(sys.argv[1], 'maps_inst.nxspe')
-    let_instrument(sys.argv[1], 'let_inst.nxspe')
+    create_inst_nxs('let_inst.nxspe', let_instrument, 3.7)
+    create_inst_nxs('maps_inst.nxspe', maps_instrument, 400.)
+    create_inst_nxs('merlin_inst.nxspe', merlin_instrument, 120.)
