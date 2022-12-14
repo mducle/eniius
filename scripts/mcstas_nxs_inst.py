@@ -12,7 +12,7 @@ cur_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 instr_path = os.path.join(cur_path, 'instruments')
 comps_path = os.path.join(instr_path, 'mcstas-comps')
 sys.path.append(cur_path)
-from create_nxs_inst import create_inst_nxs, create_data
+from horace_nxs_inst import create_inst_nxs, create_data
 
 def get_instr(instrfile):
     instname = instrfile.replace('.instr', '')
@@ -29,15 +29,86 @@ def to_float(value):
         raise RuntimeError('Unsupported instr file: Position or rotation not numerical')
 
 
+def dict2NXobj(indict):
+    outdict = {}
+    for k, v in indict.items():
+        if isinstance(v, dict) and all([f in v for f in ['type', 'value']]) and v['type'].startswith('NX'):
+            if v['type'] == 'NXfield':
+                outdict[k] = NXfield(v['value'], **v.pop('attributes', {}))
+            else:
+                nxobj = getattr(nexus, v.pop('type'))
+                outdict[k] = nxobj(**v.pop('value'))
+        else:
+            outdict[k] = v
+    return outdict
+
 def off_geom(**kwargs):
     return None
+
+# Only in nexusformat >= 1.0.0
+if not hasattr(nexus, 'NXoff_geometry'):
+    NXoff_geometry = nexus.tree._makeclass('NXoff_geometry')
+
+
+class NXoff():
+    # Class read/create NXoff_geometry fields using an Object File Format (OFF) syntax
+    def __init__(self, vertices, faces):
+        self.vertices = vertices
+        self.faces = faces
+
+    @classmethod
+    def from_nexus(cls, nxfield):
+        # Create an OFF structure from a NeXus field
+        wo = nxfield.winding_order
+        fa = list(nxfield.faces) + [len(wo)]
+        faces = [wo[fa[ii]:fa[ii+1]] for ii in range(len(fa)-1)]
+        return cls(nxfield.vertices, faces)
+
+    @classmethod
+    def from_wedge(cls, l, w1, h1, w2=None, h2=None):
+        # Create an OFF structure in shape of a wedge (trapezoidal prism)
+        if w2 is None:
+            w2 = w1
+        if h2 is None:
+            h2 = h1
+        (x1, y1, x2, y2) = tuple([float(v)/2 for v in [w1, h1, w2, h2]])
+        # Sets the origin at the centre of the guide entry square face
+        vertices = [[-x1, -y1, 0], [-x1, y1, 0], [x1, y1, 0], [x1, -y1, 0],
+                    [-x2, -y2, l], [-x2, y2, l], [x2, y2, l], [x2, -y2, l]]
+        # Use a clockwise winding, facing out, beam is in +z direction
+        faces = [[0, 1, 2, 3], [1, 5, 6, 2], [5, 4, 7, 6],
+                 [6, 7, 3, 2], [7, 4, 0, 3], [1, 0, 4, 5]]
+        return cls(vertices, faces)
+
+    def to_nexus(self):
+        # Returns a NXoff_geometry field
+        winding_order = [ww for fa in self.faces for ww in fa]
+        faces = [0] + np.cumsum([len(self.faces[ii]) for ii in range(len(self.faces)-1)]).tolist()
+        return NXoff_geometry(vertices=self.vertices, winding_order=winding_order, faces=faces)
+
+    @staticmethod
+    def _get_width_height(pos):
+        # Gets the width and height (in x and y) of a set of points
+        width = np.max(pos[:,0]) - np.min(pos[:,0])
+        height = np.max(pos[:,1]) - np.min(pos[:,1])
+        return width, height
+
+    def get_guide_params(self):
+        # Gets the guide parameters from the OFF geometry.
+        ve = np.array(self.vertices)
+        zmean = np.mean(ve[:,2])
+        w1, h1 = self._get_width_height(ve[np.where(ve[:,2] < zmean)[0], :])
+        w2, h2 = self._get_width_height(ve[np.where(ve[:,2] >= zmean)[0], :])
+        l = np.max(ve[:,2]) - np.min(ve[:,2])
+        return w1, h1, w2, h2, l
+
 
 # Each entry here maps a NeXus component to a McStas component
 # The second element is a mapping of NeXus component parameters to McStas parameters
 # The third element (if present) is a functor to return the geommetry from the NeXus OFF_GEOMETRY
 # The forth element (if present) is a list of NeXus parameters which invalidates the McStas comp
 NX2COMP_MAP = dict(
-    NXaperture = ['Slit', 
+    NXaperture = ['Slit',
         {'x_gap':'xwidth', 'y_gap':'yheight'},
     ],
     NXcollimator = ['Collimator_linear',
@@ -70,6 +141,7 @@ NX2COMP_MAP = dict(
 )
 
 class McStasComp2NX():
+    # Class to map McStas components to NeXus components
 
     COMPGP2NX_MAP = {
         'Guide*':'NXguide',
@@ -79,7 +151,7 @@ class McStasComp2NX():
     COMPCAT2NX_MAP = dict(
         sources = 'NXmoderator',
         monitors = 'NXdetector'
-    ) 
+    )
 
     COMP2NX_MAP = dict(
         DiskChopper = 'NXdisk_chopper',
@@ -120,6 +192,20 @@ class McStasComp2NX():
         kwargs['mcstas_order'] = mcstas_order
         self.nxobj['mcstas'] = json.dumps(kwargs)
         self.nxobj['transforms'] = transforms
+        id_ext = mcstas_comp.EXTEND.find('eniius_data')
+        if id_ext > 0:
+            extstr = mcstas_comp.EXTEND[id_ext:]
+            id0 = extstr.find('"') + 1
+            id1 = extstr[id0:].find('"')
+            jsonstr = extstr[id0:(id0+id1)].replace('\n', '').replace('\\"','').replace('\'','"').replace('\\','')
+            try:
+                extras = json.loads(jsonstr)
+            except SyntaxError:
+                pass
+            else:
+                for k, v in dict2NXobj(extras).items():
+                    self.nxobj[k] = v
+
 
     @classmethod
     def getNXtype(cls, comp):
@@ -147,6 +233,30 @@ class McStasComp2NX():
     @classmethod
     def Diaphragm(cls, **kw):
         return cls.Slit(**kw)
+
+    @classmethod
+    def Guide(cls, **kw):
+        geometry = NXoff.from_wedge(l=kw['l'], w1=kw['w1'], h1=kw['h1'], w2=kw.pop('w2', None), h2=kw.pop('h2', None))
+        params = {'geometry':geometry.to_nexus()}
+        if 'm' in kw:
+            params['m_value'] = kw['m']
+        return NXguide(**params)
+
+    @classmethod
+    def Guide_channeled(cls, **kw):
+        return cls.Guide(**kw)
+
+    @classmethod
+    def Guide_gravity(cls, **kw):
+        return cls.Guide(**kw)
+
+    @classmethod
+    def Guide_simple(cls, **kw):
+        return cls.Guide(**kw)
+
+    @classmethod
+    def Guide_wavy(cls, **kw):
+        return cls.Guide(**kw)
 
 
 class AffineRotate():
@@ -181,7 +291,7 @@ class AffineRotate():
         else:
             raise RuntimeError('transformation_type must be either "translation" or "rotation"')
         return cls(transform, depends_on)
-        
+
     def axisrot(self):
         # Computes the net rotation axis and rotation angle from the rotation matrix
         # https://en.wikipedia.org/wiki/Rotation_matrix#Conversion_from_rotation_matrix_to_axis%E2%80%93angle
@@ -215,7 +325,7 @@ class AffineRotate():
     def get_euler_angles(rotmat):
         # Calculates the euler angles from a rotation matrix under the McStas convention
         assert (np.abs(np.linalg.det(rotmat)) - 1) < 1.e-5, "Error: transformation is not valid"
-        return np.array([np.degrees(np.arctan2(-rotmat[2,1], rotmat[2,2])), 
+        return np.array([np.degrees(np.arctan2(-rotmat[2,1], rotmat[2,2])),
                          np.degrees(np.arctan2(rotmat[2,0], np.sqrt(1 - rotmat[2,0]**2))),
                          np.degrees(np.arctan2(-rotmat[1,0], rotmat[0,0]))])
 
@@ -279,8 +389,6 @@ class NXMcStas():
             relate_rot = comp.ROTATED_relative.replace('RELATIVE ', '')
             if (relate_at != relate_rot) and (relate_rot != 'ABSOLUTE') and (relate_at != 'ABSOLUTE'):
                 raise RuntimeError('Rotation and position relative to different components not supported')
-            print(comp.ROTATED_data)
-            print(comp.AT_data)
             self.transforms[comp.name] = AffineRotate.from_euler_translation(to_float(comp.ROTATED_data),
                                                                              to_float(comp.AT_data),
                                                                              depends_on=relate_at)
@@ -294,7 +402,7 @@ class NXMcStas():
             while self.depends_on[node] != 'ABSOLUTE':
                 node = self.depends_on[node]
                 self.affinelist[comp.name].append(self.transforms[node])
-        # Horace and Mantid sets the origin at the sample position. 
+        # Horace and Mantid sets the origin at the sample position.
         # For compatibility, we define NeXus files with the origin there if possible
         samp = [comp for comp in components_list if comp.category == 'samples']
         if len(samp) == 0:

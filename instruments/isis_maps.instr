@@ -91,10 +91,14 @@ COMPONENT Origin = Arm()
   AT (0,0,0) ABSOLUTE
 
 /* Merlin style moderator - not sure about relative origin, but anyway */
-COMPONENT source = ViewModISIS(
+COMPONENT moderator = ViewModISIS(
     Face = "TS1verBase2016_LH8020_newVM-var_South01_Maps.mcstas", E0 = E_min, E1 = E_max,
     dist = 1.7, focus_xw = 0.094, focus_yh = 0.094, modPosition=0, xw=0.12, yh=0.12)
- AT (0,0,0) RELATIVE Origin
+ AT (0,0,0) RELATIVE Origin ROTATED (0, 0, -32) ABSOLUTE
+
+COMPONENT aperture = Slit(
+    xmin = -0.04945, xmax = 0.04945, ymin = -0.04945, ymax = 0.04945)
+  AT (0, 0, 1.671) RELATIVE Origin
 
 COMPONENT shutter_guide = Guide_channeled(
     w1 = 0.094, h1 = 0.094, w2 = 0.08515, h2 = 0.08515, l = 1.9373, alphax = 4.38, alphay = 4.38 ,

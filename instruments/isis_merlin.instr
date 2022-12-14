@@ -91,10 +91,14 @@ COMPONENT Origin = Arm()
   AT (0,0,0) ABSOLUTE
 
 // The moderator //
-COMPONENT isis_mod = ViewModISIS(
+COMPONENT moderator = ViewModISIS(
     Face="TS1verBase2016_LH8020_newVM-var_South04_Merlin.mcstas", E0 = E_min, E1 = E_max,
     dist = 1.7, focus_xw = 0.094, focus_yh = 0.094, modPosition = 0, xw = 0.12, yh = 0.12)
  AT (0,0,0) RELATIVE Origin
+
+COMPONENT aperture = Slit(
+    xmin = -0.04835, xmax = 0.04835, ymin = -0.04835, ymax = 0.04835)
+  AT (0, 0, 1.643) RELATIVE Origin
 
 // 1st piece of guide in shutter //
 COMPONENT shutter_guide = Guide_channeled(
