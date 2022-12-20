@@ -168,18 +168,18 @@ COMPONENT guide11_snout = Guide_channeled(
  W=3e-3, mx = 2, my = 4)
  AT (0, 0, 24.622) RELATIVE Origin
 
-COMPONENT Sample_Position = Arm()
+COMPONENT sample_position = Arm()
   AT (0, 0, 25.0) RELATIVE Origin
 
-COMPONENT Sample = Incoherent(
+COMPONENT sample = Incoherent(
   radius = 0.02, yheight = 0.02, thickness = 0.005)
-  AT (0, 0, 0) RELATIVE Sample_Position
+  AT (0, 0, 0) RELATIVE sample_position
 
 // Keep it simple, ignore gaps between doors
-COMPONENT Detector = Monitor_nD(
+COMPONENT detector = Monitor_nD(
     options = "banana, auto t bins=200, theta limits[-39.4 139.8] bins=200",
     filename = "Detector.dat",  radius=3.5,  yheight = 4.0)
-  AT (0, 0, 0) RELATIVE Sample_Position
+  AT (0, 0, 0) RELATIVE sample_position
 
 
 END

@@ -100,17 +100,17 @@ COMPONENT aperture = Slit(
     xmin = -0.04945, xmax = 0.04945, ymin = -0.04945, ymax = 0.04945)
   AT (0, 0, 1.671) RELATIVE Origin
 
-COMPONENT shutter_guide = Guide_channeled(
+COMPONENT guide1_shutter = Guide_channeled(
     w1 = 0.094, h1 = 0.094, w2 = 0.08515, h2 = 0.08515, l = 1.9373, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 1.7546) RELATIVE Origin
 
-COMPONENT conv_guide = Guide_channeled(
+COMPONENT guide2_converging = Guide_channeled(
     w1 = 0.0847, h1 = 0.0847, w2 = 0.0650, h2 = 0.0650, l = 4.300, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 3.791) RELATIVE Origin
 
-COMPONENT between_guide = Guide_channeled(
+COMPONENT guide3_betweenchoppers = Guide_channeled(
     w1 = 0.06090, h1 = 0.06090, w2 = 0.05703, h2 = 0.05703, l = 0.847, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 9.00) RELATIVE Origin
@@ -120,7 +120,7 @@ COMPONENT fermi = FermiChopper(delay=phase_time, radius=pack_radius, nu=-freq,
   Qc=0.02176, alpha=2.33, m=0, length=length, eff=0.95, curvature=slit_curv, zero_time=0)
   AT (0,0,10.1) RELATIVE Origin
 
-COMPONENT final_Guide = Guide_channeled(
+COMPONENT guide4_final = Guide_channeled(
     w1 = 0.05432, h1 = 0.05432, w2 = 0.04883, h2 = 0.04883, l = 1.203, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 10.439) RELATIVE Origin
@@ -130,22 +130,22 @@ COMPONENT sampleslit1 = Slit(
     xmin = -0.024, xmax = 0.024, ymin = -0.024, ymax = 0.024)
   AT (0, 0, 11.7) RELATIVE Origin
 
-COMPONENT Sample_Position = Arm()
+COMPONENT sample_position = Arm()
   AT (0, 0, 12.0) RELATIVE Origin
 
-COMPONENT Sample = Incoherent(
+COMPONENT sample = Incoherent(
   radius = 0.04, yheight = 0.04, thickness = 0.005)
-  AT (0, 0, 0) RELATIVE Sample_Position
+  AT (0, 0, 0) RELATIVE sample_position
 
 // MAPS has a weird shaped detector array, model it as two parts
 COMPONENT det_lowang = Monitor_nD(
     options = "banana, auto t bins=200, theta limits[-19.8 19.8] bins=200",
     filename = "Detector.dat",  radius=6.0,  yheight = 4.0)
-  AT (0, 0, 0) RELATIVE Sample_Position
+  AT (0, 0, 0) RELATIVE sample_position
 
 COMPONENT det_strip = Monitor_nD(
     options = "banana, auto t bins=200, theta limits[21.1 59.7] bins=200",
     filename = "Detector.dat",  radius=6.0,  yheight = 1.0)
-  AT (0, 0, 0) RELATIVE Sample_Position
+  AT (0, 0, 0) RELATIVE sample_position
 
 END

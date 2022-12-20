@@ -84,7 +84,8 @@ class NXoff():
         # Returns a NXoff_geometry field
         winding_order = [ww for fa in self.faces for ww in fa]
         faces = [0] + np.cumsum([len(self.faces[ii]) for ii in range(len(self.faces)-1)]).tolist()
-        return NXoff_geometry(vertices=self.vertices, winding_order=winding_order, faces=faces)
+        vertices = NXfield(np.array(self.vertices, dtype='float64'), units='metre')
+        return NXoff_geometry(vertices=vertices, winding_order=winding_order, faces=faces)
 
     @staticmethod
     def _get_width_height(pos):
@@ -462,11 +463,76 @@ class NXMcStas():
         return nxinst
 
 
+def conv_types(obj):
+    typ = type(obj)
+    dtyp = np.dtype(typ)
+    if dtyp.name == 'object':
+        if isinstance(obj, np.ndarray):
+            vl = obj.tolist()
+            el = vl[0]
+            for ii in range(1, len(obj.shape)):
+                el = el[0]
+            tp = np.dtype(type(el)).name
+        elif obj is None:
+            (tp, vl) = ('string', 'None')
+        elif isinstance(obj, nexus.NXattr):
+            val = obj.nxdata
+            if isinstance(val, np.ndarray):
+                val = val.tolist()
+            if obj.dtype == 'object':
+                (tp, vl) = (np.dtype(type(obj.nxdata)).name, val)
+            else:
+                (tp, vl) = (obj.dtype, val)
+        else:
+            raise RuntimeError(f'unrecognised type {typ} / {dtyp}')
+    else:
+        (tp, vl) = (dtyp.name, obj)
+    if tp == 'str':
+        tp = 'string'
+    elif tp == 'float64':
+        tp = 'float'
+    elif tp == 'object':
+        raise RuntimeError('Internal logical error')
+    return tp, vl
+
+
+def nexus2jsondict(nxobj):
+    # Converts a NeXus object to a JSON-compatible dictionary
+    children = []
+    for k, obj in nxobj.items():
+        if hasattr(obj, 'nxclass'):
+            if obj.nxclass == 'NXfield':
+                typ, val = conv_types(obj.nxdata)
+                entry = {'module':'dataset',
+                         'config':{'name':k, 'values':val, 'type':typ}}
+                attrs = []
+            else:
+                entry = {'name':k, 'type':'group'}
+                attrs = [{'name':'NX_class', 'dtype':'string', 'values':obj.nxclass}]
+                if len(obj._entries) > 0:
+                    entry['children'] = nexus2jsondict(obj)
+        else:
+            raise RuntimeError(f'unrecognised object key {k}')
+        for n, v in obj.attrs.items():
+            typ, val = conv_types(v)
+            attrs.append({'name':n, 'dtype':typ, 'values':val})
+        if len(attrs) > 0:
+            entry['attributes'] = attrs
+        children.append(entry)
+    return children
+
+
 def mcstas2nxs(instrfile):
     instobj = get_instr(instrfile)
     nxinst = NXMcStas(instobj.component_list).NXinstrument()
     nxinst['name'] = NXfield(value=instobj.name)
     print(nxinst.tree)
+    root = NXroot()
+    root['w1'] = NXentry()
+    root['w1/instrument'] = nxinst
+    rootdict = nexus2jsondict(root)
+    with open(f'mcstas_{instrfile}.json', 'w') as f:
+        f.write(json.dumps({'children':rootdict}, indent=4))
     create_inst_nxs(f'mcstas_{instrfile}.nxs', lambda ei: nxinst, 25)
 
 

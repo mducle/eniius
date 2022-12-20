@@ -101,19 +101,19 @@ COMPONENT aperture = Slit(
   AT (0, 0, 1.643) RELATIVE Origin
 
 // 1st piece of guide in shutter //
-COMPONENT shutter_guide = Guide_channeled(
+COMPONENT guide1_shutter = Guide_channeled(
     w1 = 0.094, h1 = 0.094, w2 = 0.094, h2 = 0.094, l = 2.0, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 1.7) RELATIVE Origin
 
 // 2nd piece of guide converging to chopper pit //
-COMPONENT conv_guide = Guide_channeled(
+COMPONENT guide2_converging = Guide_channeled(
     w1 = 0.094, h1 = 0.094, w2 = 0.067, h2 = 0.067, l = 4.760, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 3.704) RELATIVE Origin
 
 // 3rd piece of guide leading to fermi chopper//
-COMPONENT between_guide = Guide_channeled(
+COMPONENT guide3_betweenchoppers = Guide_channeled(
     w1 = 0.0629, h1 = 0.0629, w2 = 0.0594, h2 = 0.0594, l = 0.640, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 9.182) RELATIVE Origin
@@ -125,7 +125,7 @@ COMPONENT fermi = FermiChopper(delay=phase_time, radius=0.055, nu=-freq,
   AT (0,0,10) RELATIVE Origin//
 
 // final guide section just before sample //
-COMPONENT final_Guide = Guide_channeled(
+COMPONENT guide4_final = Guide_channeled(
     w1 = 0.0568, h1 = 0.0568, w2 = 0.0506, h2 = 0.0506, l = 1.10, alphax = 4.38, alphay = 4.38 ,
  W=3e-3, mx = 3, my = 3)
   AT (0, 0, 10.277) RELATIVE Origin
@@ -134,17 +134,17 @@ COMPONENT sampleslit2 = Slit(
     xmin = -0.025, xmax = 0.025, ymin = -0.025, ymax = 0.025)
   AT (0, 0, 11.38) RELATIVE Origin
 
-COMPONENT Sample_Position = Arm()
+COMPONENT sample_position = Arm()
   AT (0, 0, 11.8) RELATIVE Origin
 
-COMPONENT Sample = Incoherent(
+COMPONENT sample = Incoherent(
   radius = 0.02, yheight = 0.04, thickness = 0.005)
-  AT (0, 0, 0) RELATIVE Sample_Position
+  AT (0, 0, 0) RELATIVE sample_position
 
 // Keep it simple, ignore gaps between doors
-COMPONENT Detector = Monitor_nD(
+COMPONENT detector = Monitor_nD(
     options = "banana, auto t bins=200, theta limits[-45.0 134.7] bins=200",
     filename = "Detector.dat",  radius=2.5,  yheight = 3.0)
-  AT (0, 0, 0) RELATIVE Sample_Position
+  AT (0, 0, 0) RELATIVE sample_position
 
 END
