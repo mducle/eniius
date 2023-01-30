@@ -10,7 +10,7 @@ embedding neutron instrument information using (nx)spe files.
 
 ## Aims
 
-Propert analysis of inelastic neutron scattering (INS) data requires taking the
+Proper analysis of inelastic neutron scattering (INS) data requires taking the
 instrument resolution function into account
 [[1]](https://ethos.bl.uk/OrderDetails.do?uin=uk.bl.ethos.239595), and this in
 turn requires particular information about the neutron spectrometer
@@ -18,8 +18,8 @@ turn requires particular information about the neutron spectrometer
 post-facto from the program(s) performing the resolution convolution.
 
 In the interest of [FAIR data](https://en.wikipedia.org/wiki/FAIR_data) and
-to improve useability, this information should be embedded in the raw datafiles
-produced by the instrument, and the aim `eniius` is to provide a utility for
+to improve usability, this information should be embedded in the raw datafiles
+produced by the instrument, and the aim of `eniius` is to provide a utility for
 just this purpose.
 
 
@@ -28,7 +28,7 @@ just this purpose.
 * Instrument data is embedded in a [NeXus](https://www.nexusformat.org/) data
   file as a [NXinstrument](https://manual.nexusformat.org/classes/base_classes/NXinstrument.html)
   group.
-* The embedded instrument is at a minium enough to be imported into
+* The embedded instrument is at a minimum enough to be imported into
   [Horace](http://horace.isis.rl.ac.uk/) for resolution calculation.
 * `eniius` also has the facility to export this information as
   [McStas](http://mcstas.org/) instrument files for ray tracing simulations of

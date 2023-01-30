@@ -1,28 +1,62 @@
-import nexusformat.nexus
-from nexusformat.nexus import NXFile, NXfield, NXdata, nxload, NXtransformations, \
-                              NXslit, NXsource, NXmoderator, NXnote, NXbeam, \
-                              NXinstrument, NXfermi_chopper, NXdisk_chopper, \
-                              nxopen, NXentry, NXcollection, NXsample
 import numpy as np
 import scipy.io
 import copy
 import sys
 import os
 
-INST_TABLES = scipy.io.loadmat('inst_tables.mat')
+import nexusformat.nexus
 
-def create_inst_nxs(outfile, inst_fun, ei):
+# Monkey patch the nexus write function to use fixed-width ASCII NX_class labels
+# because IBEX [ISISICP] only supports this format (as it uses the old napi.c)
+old_wg = nexusformat.nexus.tree.NXFile._writegroup
+def new_wg(self, group):
+    links = old_wg(self, group)
+    if group.nxpath != '' and group.nxpath != '/':
+        path = self.nxpath + '/' + group.nxname
+        if group.nxclass and group.nxclass != 'NXgroup':
+            self[path].attrs['NX_class'] = np.array(group.nxclass, dtype='S')
+    return links
+nexusformat.nexus.tree.NXFile._writegroup = new_wg
+
+from nexusformat.nexus import NXFile, NXfield, NXdata, nxload, NXtransformations, \
+                              NXslit, NXsource, NXmoderator, NXnote, NXbeam, \
+                              NXinstrument, NXfermi_chopper, NXdisk_chopper, \
+                              nxopen, NXentry, NXcollection, NXsample, NXdetector, NXroot
+
+def create_inst_nxs(outfile, inst_fun, ei, root_name='w1', det_file=None):
     n = 5
     with nxopen(outfile, 'w') as root:
-        root['w1'] = NXentry()
-        root['w1/NXSPE_info'] = NXcollection(fixed_energy=NXfield(ei, units='meV'),
-                                             ki_over_kf_scaling=True,
-                                             psi=NXfield(np.nan, units='degrees'))
-        root['w1/definition'] = NXfield('NXSPE', version='1.3')
-        root['w1/program_name'] = NXfield('eniius', version='0.1')
-        root['w1/sample'] = NXsample()
-        root['w1/data'] = create_data(n, ei)
-        root['w1/instrument'] = inst_fun(ei)
+        root[root_name] = NXentry()
+        if (root_name == 'w1'):
+            root[root_name + '/NXSPE_info'] = NXcollection(fixed_energy=NXfield(ei, units='meV'),
+                                                           ki_over_kf_scaling=True,
+                                                           psi=NXfield(np.nan, units='degrees'))
+            root[root_name + '/definition'] = NXfield('NXSPE', version='1.3')
+        root[root_name + '/program_name'] = NXfield('eniius', version='0.1')
+        root[root_name + '/sample'] = NXsample()
+        root[root_name + '/data'] = create_data(n, ei)
+        root[root_name + '/instrument'] = inst_fun(ei)
+        if (root_name == 'mantid_workspace_1'):
+            inst_name = root['mantid_workspace_1/instrument/name'].nxvalue + ' '
+            root['mantid_workspace_1/instrument/name'].replace(
+                    NXfield(np.array(inst_name, dtype='S'), shape=(1,)))
+        if det_file:
+            # Get a list of instrument components to save
+            cmps = ','.join([k for k in root[root_name + '/instrument'] if k != 'name']) + ' '
+            root[root_name + '/instrument/components_to_save'] = NXnote( \
+                    data=NXfield(np.array(cmps, dtype='S'), shape=(1,)),
+                    description='Instrument components to be saved by IBEX/ISISICP',
+                    type='text/plain')
+            # Assumes ISIS format; cols=(det#, delta, L2, code, theta, phi, W_xyz, a_xyz, det_123)
+            detdat = np.loadtxt(det_file, skiprows=3, usecols=(0, 2, 3, 4, 5))
+            for fnm, idn in zip(['detectors', 'monitors'], [2, 1]):
+                idx = np.where(detdat[:,2] == idn)[0]
+                fd = {f'number_of_{fnm}': NXfield(np.array(len(idx), dtype='uint64'))}
+                fd['azimuthal_angle'] = NXfield(detdat[idx,4], units='degree')
+                fd['polar_angle'] = NXfield(detdat[idx,3], units='degree')
+                fd['distance'] = NXfield(detdat[idx,1], units='metre')
+                fd['detector_number'] = NXfield(detdat[idx,0].astype(np.int32))
+                root[root_name + '/instrument/physical_' + fnm] = NXdetector(**fd)
 
 def create_data(n, ei):
     dmat = np.random.rand(n, n)
@@ -38,6 +72,8 @@ def create_data(n, ei):
     return dat
 
 def let_instrument(ei):
+    INST_TABLES = scipy.io.loadmat('inst_tables.mat')
+
     inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
     inst['name'] = NXfield(value='LET', short_name='LET')
     m_ = {'units':'metre'}
@@ -74,6 +110,8 @@ def let_instrument(ei):
     return inst
 
 def maps_instrument(ei):
+    INST_TABLES = scipy.io.loadmat('inst_tables.mat')
+
     inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
     inst['name'] = NXfield(value='MAPS', short_name='MAPS')
     m_ = {'units':'metre'}
@@ -105,6 +143,8 @@ def maps_instrument(ei):
     return inst
 
 def merlin_instrument(ei):
+    INST_TABLES = scipy.io.loadmat('inst_tables.mat')
+
     inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
     inst['name'] = NXfield(value='MERLIN', short_name='MER')
     m_ = {'units':'metre'}
@@ -138,6 +178,6 @@ def merlin_instrument(ei):
     return inst
 
 if __name__ == '__main__':
-    create_inst_nxs('let_inst.nxspe', let_instrument, 3.7)
-    create_inst_nxs('maps_inst.nxspe', maps_instrument, 400.)
-    create_inst_nxs('merlin_inst.nxspe', merlin_instrument, 120.)
+    create_inst_nxs('let_inst.nxspe', let_instrument, 3.7, 'mantid_workspace_1')
+    create_inst_nxs('maps_inst.nxspe', maps_instrument, 400., 'mantid_workspace_1')
+    create_inst_nxs('merlin_inst.nxspe', merlin_instrument, 120., 'mantid_workspace_1', 'detector.dat')

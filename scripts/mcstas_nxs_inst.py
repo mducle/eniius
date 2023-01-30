@@ -42,9 +42,6 @@ def dict2NXobj(indict):
             outdict[k] = v
     return outdict
 
-def off_geom(**kwargs):
-    return None
-
 # Only in nexusformat >= 1.0.0
 if not hasattr(nexus, 'NXoff_geometry'):
     NXoff_geometry = nexus.tree._makeclass('NXoff_geometry')
@@ -106,39 +103,38 @@ class NXoff():
 
 # Each entry here maps a NeXus component to a McStas component
 # The second element is a mapping of NeXus component parameters to McStas parameters
-# The third element (if present) is a functor to return the geommetry from the NeXus OFF_GEOMETRY
-# The forth element (if present) is a list of NeXus parameters which invalidates the McStas comp
+# The third element is a mapping of NeXus component parameters to McStas position paramters
 NX2COMP_MAP = dict(
     NXaperture = ['Slit',
         {'x_gap':'xwidth', 'y_gap':'yheight'},
     ],
     NXcollimator = ['Collimator_linear',
         {'divergence_x':'divergence', 'divergence_y':'divergenceV'},
-        off_geom(width='xwidth', height='yheight', length='length', shape='cuboid'),
     ],
     NXdetector = ['Monitor_nD',
         {},
-        off_geom(off_file='geometry'),
     ],
     NXdisk_chopper = ['DiskChopper',
         {'slits':'nslit', 'rotation_speed':'nu', 'radius':'radius', 'slit_angle':'theta_0'},
-        {},
-        [],
-        ['slit_edges'],
     ],
     NXfermi_chopper = ['FermiChopper',
         {'rotation_speed':'nu', 'radius':'radius', 'slit':'w', 'r_slit':'curvature',
          'number':'nslit', 'width':'xwidth', 'height':'yheight'},
+        {'distance': 'set_AT'},
     ],
     NXguide = ['Guide',
         {'m_value':'m'},
-        off_geom(in_width='w1', in_height='h1', out_width='w2', out_height='h2',
-                 length='l', shape='trapezoid'),
     ],
     NXslit = ['Slit',
         {'x_gap':'xwidth', 'y_gap':'yheight'},
     ],
-    NXsample = ['Incoherent'],
+    NXsample = ['Incoherent',
+        {},
+    ],
+    NXmoderator = ['Moderator',
+        {},
+        {'distance': 'set_AT'},
+    ]
 )
 
 class McStasComp2NX():
@@ -259,6 +255,12 @@ class McStasComp2NX():
     def Guide_wavy(cls, **kw):
         return cls.Guide(**kw)
 
+    @classmethod
+    def Collimator_linear(cls, **kw):
+        geometry = NXoff.from_wedge(l=kw['length'], w1=kw['xwidth'], h1=kw['yheight'])
+        params = {'divergence_x':kw['divergence'], 'divergence_y':kw['divergenceV'], 'geometry':geometry.to_nexus()}
+        return NXcollimator(**params)
+
 
 class AffineRotate():
     def __init__(self, transformation_matrix, depends_on='.'):
@@ -280,6 +282,8 @@ class AffineRotate():
         # The field must have the 'transformation_type', and 'vector' attributes (optionally 'offset')
         assert hasattr(nxfield, 'transformation_type'), "NXfield must have 'transformation_type' attribute"
         assert hasattr(nxfield, 'vector'), "NXfield must have 'vector' attribute"
+        if hasattr(nxfield, 'depends_on'):
+            depends_on = nxfield.depends_on
         transform = np.eye(4)
         offset = np.zeros(3)
         if hasattr(nxfield, 'offset'):
@@ -287,7 +291,7 @@ class AffineRotate():
         if nxfield.transformation_type == 'translation':
             transform[:3, 3] = to_float(nxfield.vector) * nxfield._value + offset
         elif nxfield.transformation_type == 'rotation':
-            transform[:3, :3] = cls.rodrigues(to_float(nx_field.vector), nxfield._value)
+            transform[:3, :3] = cls.rodrigues(to_float(nxfield.vector), nxfield._value)
             transform[:3, 3] = offset
         else:
             raise RuntimeError('transformation_type must be either "translation" or "rotation"')
@@ -454,12 +458,13 @@ class NXMcStas():
         # Returns a NXcomponent corresponding to a McStas component.
         comp = self.components[self.indices[name]]
         mcpars = {p:getattr(comp, p) for p in comp.parameter_names}
+        print(order)
         return McStasComp2NX(comp, order, self.NXtransformations(name), **mcpars).nxobj
 
     def NXinstrument(self):
         nxinst = NXinstrument()
-        for comp in self.components:
-            nxinst[comp.name] = self.NXcomponent(comp.name)
+        for order, comp in enumerate(self.components):
+            nxinst[comp.name] = self.NXcomponent(comp.name, order)
         return nxinst
 
 
