@@ -169,7 +169,7 @@ AT (0,0,0) ABSOLUTE
 //   Merlin: 0.88
 //   Hydrogen: 0.7
 COMPONENT Source = ViewModISIS(
-    Face = "TS1verBase2016_LH8020_newVM-var_South06_Mari.mcstas", E0 = emin, E1 = emax,
+    Face = "TS1_S06_Mari.mcstas", E0 = emin, E1 = emax,
     modPosition = 0, xw = 0.12, yh = 0.12, focus_xw = 0.091, focus_yh = 0.091, dist = 1.65)
   AT (0, 0, 0) RELATIVE Origin
 

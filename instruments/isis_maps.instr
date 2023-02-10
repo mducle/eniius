@@ -92,13 +92,70 @@ COMPONENT Origin = Arm()
 
 /* Merlin style moderator - not sure about relative origin, but anyway */
 COMPONENT moderator = ViewModISIS(
-    Face = "TS1verBase2016_LH8020_newVM-var_South01_Maps.mcstas", E0 = E_min, E1 = E_max,
+    Face = "TS1_S01_Maps.mcstas", E0 = E_min, E1 = E_max,
     dist = 1.7, focus_xw = 0.094, focus_yh = 0.094, modPosition=0, xw=0.12, yh=0.12)
  AT (0,0,0) RELATIVE Origin ROTATED (0, 0, -32) ABSOLUTE
+  EXTEND
+  %{
+      // JSON encoded string for parameters needed by HORACE.
+      char eniius_data[] =
+          "{'function_pulse_shape': \
+                {'type':'NXnote', 'value': { \
+                    'data': '\
+def mcstas_time_profile(Face, Ei):<nl>\
+<tb>with open(Face, <qt>r<qt>) as f:<nl>\
+<tb><tb>dat = f.read().replace(<qt>(<qt>,<qt><qt>).replace(<qt>)<qt>,<qt><qt>).split(<qt><bs>n<qt>)<nl>\
+<tb>id0, en, intens = (dat.index(<qt> time <qt>), [], [])<nl>\
+<tb>n = dat.index(<qt> time <qt>, id0 + 1) - id0 - 6<nl>\
+<tb># time data originally in ns, energy in MeV<nl>\
+<tb>t = np.loadtxt(dat[(id0+1):(id0+n)], usecols=(0)) / 100<nl>\
+<tb>dt = np.diff(t)<nl>\
+<tb>while True:<nl>\
+<tb><tb>e0 = np.loadtxt(dat[id0-2].split()[2:5:2]) * 1.e9<nl>\
+<tb><tb>i0 = np.loadtxt(dat[(id0+1):(id0+n)], usecols=(1))<nl>\
+<tb><tb>en.append(np.mean(e0))<nl>\
+<tb><tb>intens.append((i0[:-1] / dt) / (e0[1] - e0[0]))<nl>\
+<tb><tb>try:<nl>\
+<tb><tb><tb>id0 = dat.index(<qt> time <qt>, id0 + 1)<nl>\
+<tb><tb>except ValueError:<nl>\
+<tb><tb><tb>break<nl>\
+<tb>en, intens, tlog = (np.log(en), np.array(intens), np.log(t))<nl>\
+<tb>kp = np.where(t < 2000)[0]<nl>\
+<tb>ie = np.where(en < np.log(Ei))[0][-1]<nl>\
+<tb>frac = (np.log(Ei) - en[ie]) / (en[ie+1] - en[ie])<nl>\
+<tb>return intens[ie,kp] + frac * (intens[ie+1,kp] - intens[ie,kp])<nl>',\
+                    'globals': 'np:numpy, open:open, ValueError:ValueError',\
+                    'type': 'text/x-python', \
+                    'description': 'Python script to compute moderator time profile from Ei'} \
+                }}";
+  %}
 
 COMPONENT aperture = Slit(
-    xmin = -0.04945, xmax = 0.04945, ymin = -0.04945, ymax = 0.04945)
-  AT (0, 0, 1.671) RELATIVE Origin
+    xmin = -0.047, xmax = 0.047, ymin = -0.047, ymax = 0.047)
+  AT (0, 0, 1.7) RELATIVE Origin
+  EXTEND
+  %{
+      // JSON encoded string for parameters needed by HORACE.
+      char eniius_data[] =
+          "{'parameter_function': \
+                {'type':'NXnote', 'value': { \
+                    'data': '\
+def scale_x_gap(Ei):<nl>\
+<tb>l = np.sqrt(81.804201263673718 / np.array(ei))<nl>\
+<tb>if l > 4.5:<nl>\
+<tb><tb>gain = 11.9644283524285 + 3.3130483907728 * (l - 4.5)<nl>\
+<tb>else:<nl>\
+<tb><tb>gain = 1 + np.exp(-2.31186757913804 / l) * (23.2965476737752 + \
+                - 15.1289612048092 * l + 6.11185114079924 * l * l \
+                - 0.863318992430536 * l * l + 0.0439354263500835 * l * l * l)<nl>\
+<tb>return gain<nl>\
+def scale_y_gap(Ei):<nl>\
+<tb>return scale_x_gap(Ei)<nl>', \
+                    'globals': 'np:numpy',\
+                    'type': 'text/x-python', \
+                    'description': 'Python script to compute aperture parameter from Ei'} \
+                }}";
+  %}
 
 COMPONENT guide1_shutter = Guide_channeled(
     w1 = 0.094, h1 = 0.094, w2 = 0.08515, h2 = 0.08515, l = 1.9373, alphax = 4.38, alphay = 4.38 ,

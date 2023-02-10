@@ -15,7 +15,7 @@ sys.path.append(cur_path)
 from horace_nxs_inst import create_inst_nxs, create_data
 
 def get_instr(instrfile):
-    instname = instrfile.replace('.instr', '')
+    instname = os.path.basename(instrfile).replace('.instr', '')
     inst = mcstasscript.McStas_instr(instname, package_path=comps_path)
     reader = mcstasscript.McStas_file(os.path.join(instr_path, instrfile))
     reader.add_to_instr(inst)
@@ -27,6 +27,16 @@ def to_float(value):
         return np.array([float(v) for v in value])
     except ValueError:
         raise RuntimeError('Unsupported instr file: Position or rotation not numerical')
+
+
+def _sanitize(indict):
+    for k in indict:
+        if isinstance(indict[k], str):
+            indict[k] = indict[k].replace('<nl>', '\n').replace('<tb>', '    ')\
+                .replace('<qt>',"'").replace('<bs>','\\')
+        elif isinstance(indict[k], dict):
+            indict[k] = _sanitize(indict[k])
+    return indict
 
 
 def dict2NXobj(indict):
@@ -200,7 +210,7 @@ class McStasComp2NX():
             except SyntaxError:
                 pass
             else:
-                for k, v in dict2NXobj(extras).items():
+                for k, v in dict2NXobj(_sanitize(extras)).items():
                     self.nxobj[k] = v
 
 
@@ -458,7 +468,6 @@ class NXMcStas():
         # Returns a NXcomponent corresponding to a McStas component.
         comp = self.components[self.indices[name]]
         mcpars = {p:getattr(comp, p) for p in comp.parameter_names}
-        print(order)
         return McStasComp2NX(comp, order, self.NXtransformations(name), **mcpars).nxobj
 
     def NXinstrument(self):
@@ -536,9 +545,9 @@ def mcstas2nxs(instrfile):
     root['w1'] = NXentry()
     root['w1/instrument'] = nxinst
     rootdict = nexus2jsondict(root)
-    with open(f'mcstas_{instrfile}.json', 'w') as f:
+    with open(f'mcstas_{instobj.name}.json', 'w') as f:
         f.write(json.dumps({'children':rootdict}, indent=4))
-    create_inst_nxs(f'mcstas_{instrfile}.nxs', lambda ei: nxinst, 25)
+    create_inst_nxs(f'mcstas_{instobj.name}.nxs', lambda ei: nxinst, 25)
 
 
 if __name__ == '__main__':

@@ -180,4 +180,4 @@ def merlin_instrument(ei):
 if __name__ == '__main__':
     create_inst_nxs('let_inst.nxspe', let_instrument, 3.7, 'mantid_workspace_1')
     create_inst_nxs('maps_inst.nxspe', maps_instrument, 400., 'mantid_workspace_1')
-    create_inst_nxs('merlin_inst.nxspe', merlin_instrument, 120., 'mantid_workspace_1', 'detector.dat')
+    create_inst_nxs('merlin_inst.nxspe', merlin_instrument, 120., 'mantid_workspace_1')
