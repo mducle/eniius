@@ -510,44 +510,14 @@ def conv_types(obj):
     return tp, vl
 
 
-def nexus2jsondict(nxobj):
-    # Converts a NeXus object to a JSON-compatible dictionary
-    children = []
-    for k, obj in nxobj.items():
-        if hasattr(obj, 'nxclass'):
-            if obj.nxclass == 'NXfield':
-                typ, val = conv_types(obj.nxdata)
-                entry = {'module':'dataset',
-                         'config':{'name':k, 'values':val, 'type':typ}}
-                attrs = []
-            else:
-                entry = {'name':k, 'type':'group'}
-                attrs = [{'name':'NX_class', 'dtype':'string', 'values':obj.nxclass}]
-                if len(obj._entries) > 0:
-                    entry['children'] = nexus2jsondict(obj)
-        else:
-            raise RuntimeError(f'unrecognised object key {k}')
-        for n, v in obj.attrs.items():
-            typ, val = conv_types(v)
-            attrs.append({'name':n, 'dtype':typ, 'values':val})
-        if len(attrs) > 0:
-            entry['attributes'] = attrs
-        children.append(entry)
-    return children
-
-
 def mcstas2nxs(instrfile):
     instobj = get_instr(instrfile)
     nxinst = NXMcStas(instobj.component_list).NXinstrument()
     nxinst['name'] = NXfield(value=instobj.name)
-    print(nxinst.tree)
-    root = NXroot()
-    root['w1'] = NXentry()
-    root['w1/instrument'] = nxinst
-    rootdict = nexus2jsondict(root)
-    with open(f'mcstas_{instobj.name}.json', 'w') as f:
-        f.write(json.dumps({'children':rootdict}, indent=4))
-    create_inst_nxs(f'mcstas_{instobj.name}.nxs', lambda ei: nxinst, 25)
+    from .writer import Writer
+    writer = Writer(nxinst)
+    writer.to_json(f'mcstas_{instobj.name}.json')
+    writer.to_icp(f'mcstas_{instobj.name}.nxs')
 
 
 if __name__ == '__main__':
