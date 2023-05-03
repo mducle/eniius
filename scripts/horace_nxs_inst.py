@@ -1,17 +1,15 @@
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '..'))
 
-import eniius.writer
-import eniius.horace
+import eniius
 
 from nexusformat.nexus import *
 
 
 def create_inst_nxs(outfile, inst_fun, ei, det_file=None):
-    writer = eniius.writer.Writer(inst_fun(ei))
-    writer.sample = NXsample()
-    writer.to_nxspe(f'{outfile}.nxspe', ei, det_file)
-    writer.to_icp(f'{outfile}.nxs', det_file)
+    wrapper = eniius.Eniius(inst_fun(ei), det_file)
+    wrapper.to_nxspe(f'{outfile}.nxspe')
+    wrapper.to_icp(f'{outfile}.nxs')
 
 
 if __name__ == '__main__':

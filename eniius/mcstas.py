@@ -11,8 +11,7 @@ import os
 cur_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 instr_path = os.path.join(cur_path, 'instruments')
 comps_path = os.path.join(instr_path, 'mcstas-comps')
-sys.path.append(cur_path)
-from horace_nxs_inst import create_inst_nxs, create_data
+
 
 def get_instr(instrfile):
     instname = os.path.basename(instrfile).replace('.instr', '')

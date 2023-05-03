@@ -77,6 +77,7 @@ class Writer:
             self.inst = nxobj
             nxentry = NXentry()
             nxentry['instrument'] = self.inst
+            self.sample = NXsample()
         else:
             if nxobj.nxclass == 'NXroot':
                 entries = dir(nxobj)
