@@ -1,0 +1,11 @@
+scripts/*.nxspe
+scripts/*.nxs
+scripts/*_db
+scripts/*.sqw
+scripts/*.json
+
+mccode.sim
+
+*.diff
+
+__pycache__
