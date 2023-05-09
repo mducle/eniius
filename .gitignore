@@ -9,3 +9,15 @@ mccode.sim
 *.diff
 
 __pycache__
+
+build
+dist
+eniius.egg-info
+pychop
+pychop-git
+McCode
+
+*.swp
+*.swo
+
+test/success

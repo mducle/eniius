@@ -13,6 +13,7 @@ def create_inst_nxs(outfile, inst_fun, ei, det_file=None):
 
 
 if __name__ == '__main__':
-    create_inst_nxs('horace_let_inst', eniius.horace.let_instrument, 3.7, 'detector.dat')
-    create_inst_nxs('horace_maps_inst', eniius.horace.maps_instrument, 400., 'detector.dat')
-    create_inst_nxs('horace_merlin_inst', eniius.horace.merlin_instrument, 120., 'detector.dat')
+    detfile = os.path.join(os.path.dirname(eniius.__file__), 'detector.dat')
+    create_inst_nxs('horace_let_inst', eniius.horace.let_instrument, 3.7, detfile)
+    create_inst_nxs('horace_maps_inst', eniius.horace.maps_instrument, 400., detfile)
+    create_inst_nxs('horace_merlin_inst', eniius.horace.merlin_instrument, 120., detfile)

@@ -9,9 +9,7 @@ import os
 
 from .mcstas import NX2COMP_MAP, AffineRotate, NXoff
 
-cur_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-instr_path = os.path.join(cur_path, 'instruments')
-comps_path = os.path.join(instr_path, 'mcstas-comps')
+comps_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'mcstas-comps'))
 
 def get_nx_component(nxobj, nxtype=None, nxname=None):
     # Recursively looks through a NeXus object for a specific component type or name

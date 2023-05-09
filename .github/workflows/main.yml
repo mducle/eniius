@@ -1,0 +1,42 @@
+name: eniius
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v3
+        id: cache-mccode
+        with:
+          path: McCode
+          key: McCode-git-cache
+      - name: Clone McCode
+        if: steps.cache-mccode.cache-hit != 'true'
+        run: git clone https://github.com/McStasMcXtrace/McCode --depth=1
+      - uses: mamba-org/provision-with-micromamba@main
+        with:
+          environment-file: false
+          cache-downloads: true
+          extra-specs: |
+            python=3.8
+            numpy
+            six
+          channels: conda-forge
+      - name: Build and test eniius
+        run: |
+          python setup.py bdist_wheel --universal
+          pip install dist/*
+          cd test
+          python run_test.py
+      - uses: actions/upload-artifact@v3
+        with:
+          path: dist/*

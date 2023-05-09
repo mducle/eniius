@@ -8,15 +8,17 @@ import copy
 import sys
 import os
 
-cur_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+cur_path = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 instr_path = os.path.join(cur_path, 'instruments')
-comps_path = os.path.join(instr_path, 'mcstas-comps')
+comps_path = os.path.join(cur_path, 'mcstas-comps')
 
 
 def get_instr(instrfile):
     instname = os.path.basename(instrfile).replace('.instr', '')
     inst = mcstasscript.McStas_instr(instname, package_path=comps_path)
-    reader = mcstasscript.McStas_file(os.path.join(instr_path, instrfile))
+    if not os.path.exists(instrfile):
+        instrfile = os.path.join(instr_path, instrfile)
+    reader = mcstasscript.McStas_file(instrfile)
     reader.add_to_instr(inst)
     return inst
 
