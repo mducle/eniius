@@ -14,6 +14,9 @@ jobs:
   build_and_test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - uses: actions/cache@v3
         id: cache-mccode
         with:
@@ -25,6 +28,7 @@ jobs:
       - uses: mamba-org/provision-with-micromamba@main
         with:
           environment-file: false
+          environment-name: py38test
           cache-downloads: true
           extra-specs: |
             python=3.8
