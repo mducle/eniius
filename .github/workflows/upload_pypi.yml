@@ -1,0 +1,23 @@
+name: Upload PyPI wheels
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Download wheels
+      run: |
+        python3 -m pip install twine requests
+        python3 release.py --pypi --token=${{ secrets.GH_TOKEN }}
+    - name: Publish wheels to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      run: |
+        twine upload twine_wheelhouse/*.whl
