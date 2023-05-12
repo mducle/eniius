@@ -24,6 +24,7 @@ jobs:
           key: McCode-git-cache
       - name: Clone McCode
         if: steps.cache-mccode.cache-hit != 'true'
+        continue-on-error: true
         run: git clone https://github.com/McStasMcXtrace/McCode --depth=1
       - uses: mamba-org/provision-with-micromamba@main
         with:
@@ -41,6 +42,11 @@ jobs:
           pip install dist/*
           cd test
           python run_test.py
+      - name: Upload release wheels
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          pip3 install requests
+          python3 release.py --notest --github --token=${{ secrets.GH_GIST_TOKEN }}
       - uses: actions/upload-artifact@v3
         with:
           path: dist/*
