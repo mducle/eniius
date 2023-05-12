@@ -1,0 +1,15 @@
+cff-version: "1.1.0"
+message: "If you have used eniius in your research, please cite it as below"
+abstract: "eniius is a utility for embedding neutron instrument information using (nx)spe files."
+authors:
+  - family-names: "Le"
+    given-names: "Manh Duc"
+    orcid: "https://orcid.org/0000-0003-3012-6053"
+title: "eniius"
+version: "0.1.0"
+date-released: "2023-05-12"
+license: "GPL-3.0-only"
+repository: "https://github.com/mducle/eniius"
+url: "https://github.com/eniius/eniius"
+keywords:
+  - "Python"
