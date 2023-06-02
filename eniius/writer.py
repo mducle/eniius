@@ -100,11 +100,10 @@ class Writer:
             self.nxobj[self.rootname] = nxentry
 
 
-    def to_json(self, outfile, nxobj=None):
+    def to_json(self, invar):
         # Converts a NeXus object to a JSON-compatible dictionary
+        outfile, nxobj = (invar, self.nxobj) if isinstance(invar, str) else (None, invar)
         children = []
-        if nxobj is None:
-            nxobj = self.nxobj
         for k, obj in nxobj.items():
             if hasattr(obj, 'nxclass'):
                 if obj.nxclass == 'NXfield':
@@ -116,7 +115,7 @@ class Writer:
                     entry = {'name':k, 'type':'group'}
                     attrs = [{'name':'NX_class', 'dtype':'string', 'values':obj.nxclass}]
                     if len(obj._entries) > 0:
-                        entry['children'] = self.to_json(outfile, obj)
+                        entry['children'] = self.to_json(obj)
             else:
                 raise RuntimeError(f'unrecognised object key {k}')
             for n, v in obj.attrs.items():
@@ -125,10 +124,13 @@ class Writer:
             if len(attrs) > 0:
                 entry['attributes'] = attrs
             children.append(entry)
-        if not outfile.endswith('.json'):
-            outfile += '.json'
-        with open(outfile, 'w') as f:
-            f.write(json.dumps({'children':children}, indent=4))
+        if outfile is not None:
+            if not outfile.endswith('.json'):
+                outfile += '.json'
+            with open(outfile, 'w') as f:
+                f.write(json.dumps({'children':children}, indent=4))
+        else:
+            return children
 
 
     def to_nxspe(self, outfile, ei=25, det_file=None):

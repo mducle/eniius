@@ -233,9 +233,24 @@ class McStasComp2NX():
 
     @classmethod
     def Slit(cls, **kw):
+        def to_float_or_string(value):
+            """Support string-named parameters; to allow replacement later"""
+            try:
+                return float(value)
+            except ValueError:
+                return value
+
+        def dif(a, b):
+            a = to_float_or_string(a)
+            b = to_float_or_string(b)
+            if isinstance(a, str) or isinstance(b, str):
+                return f"{a} - {b}"
+            return a - b
+
+        # The slit should be moved (via a NXbeam?) to correctly support non-symmetric openings; but this is not easy.
         params = {}
-        params['x_gap'] = kw['xwidth'] if kw['xwidth'] else float(kw['xmax']) - float(kw['xmin'])
-        params['y_gap'] = kw['yheight'] if kw['yheight'] else float(kw['ymax']) - float(kw['ymin'])
+        params['x_gap'] = kw['xwidth'] if kw['xwidth'] else dif(kw['xmax'], kw['xmin'])
+        params['y_gap'] = kw['yheight'] if kw['yheight'] else dif(kw['ymax'], kw['ymin'])
         return NXslit(**params)
 
     @classmethod
@@ -333,9 +348,9 @@ class AffineRotate():
         # https://github.com/McStasMcXtrace/McCode/blob/master/common/lib/share/mccode-r.c#L2521
         cc = np.cos(np.radians(euler))
         ss = np.sin(np.radians(euler))
-        return np.array([[cc[1]*cc[2], ss[0]*ss[1]*cc[2]+cc[0]*ss[2], ss[0]*ss[2]]-cc[0]*ss[1]*cc[2],
-                         [-cc[1]*ss[2], cc[0]*cc[2]-ss[0]*ss[1]*ss[2], ss[0]*cc[2]]+cc[0]*ss[1]*ss[2],
-                         [ss[1],       -ss[0]*cc[1],                   cc[0]*cc[1]]])
+        return np.array([[ cc[1]*cc[2], ss[0]*ss[1]*cc[2]+cc[0]*ss[2], ss[0]*ss[2]-cc[0]*ss[1]*cc[2]],
+                         [-cc[1]*ss[2], cc[0]*cc[2]-ss[0]*ss[1]*ss[2], ss[0]*cc[2]+cc[0]*ss[1]*ss[2]],
+                         [       ss[1],                  -ss[0]*cc[1],                   cc[0]*cc[1]]])
 
     @staticmethod
     def get_euler_angles(rotmat):
@@ -405,6 +420,11 @@ class NXMcStas():
             relate_rot = comp.ROTATED_relative.replace('RELATIVE ', '')
             if (relate_at != relate_rot) and (relate_rot != 'ABSOLUTE') and (relate_at != 'ABSOLUTE'):
                 raise RuntimeError('Rotation and position relative to different components not supported')
+            if relate_at == 'PREVIOUS' and ii > 0:
+                relate_at = self.component_name_from_index(ii-1)
+            if relate_at != 'ABSOLUTE' and relate_at not in self.indices:
+                raise RuntimeError("Components can only be positioned relative to previously defined components")
+                
             self.transforms[comp.name] = AffineRotate.from_euler_translation(to_float(comp.ROTATED_data),
                                                                              to_float(comp.AT_data),
                                                                              depends_on=relate_at)
@@ -457,6 +477,12 @@ class NXMcStas():
         if not transform_added:
             new_list.append(tr1)
         return new_list
+
+    def component_name_from_index(self, index: int) -> str:
+        for name, ii in self.indices.items():
+            if index == ii:
+                return name
+        return None
 
     def NXtransformations(self, name):
         # Returns an NXtransformations group for a component with a name
