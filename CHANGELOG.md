@@ -1,3 +1,13 @@
+# [v0.1.1](https://github.com/pace-neutrons/libpymcr/compare/v0.1.0..v0.1.1)
+
+## Bugfix release
+
+* Fix bug in JSON output function
+* Fix error in Euler rotation matrix calculation
+* Can now handle McStas PREVIOUS keyword for RELATIVE component position
+* Update horace instrument routines to accept chopper speed and types
+
+
 # [v0.1.0](https://github.com/pace-neutrons/libpymcr/compare/b5d2404..v0.1.0)
 
 ## Initial release of eniius
@@ -28,4 +38,3 @@ wrapper = eniius.Eniius(eniius.horace.let_instrument(ei=3.7), det_file='detector
 wrapper.to_nxspe('let_data.nxspe')
 ```
 
-# [v0]
