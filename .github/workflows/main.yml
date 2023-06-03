@@ -48,7 +48,7 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         run: |
           pip3 install requests
-          python3 release.py --notest --github --token=${{ secrets.GH_GIST_TOKEN }}
+          python3 release.py --notest --github --token=${{ secrets.GH_TOKEN }}
       - uses: actions/upload-artifact@v3
         with:
           path: dist/*
