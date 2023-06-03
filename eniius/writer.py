@@ -181,13 +181,11 @@ class Writer:
         # Assumes ISIS format; cols=(det#, delta, L2, code, theta, phi, W_xyz, a_xyz, det_123)
         with open(det_file, 'r') as f:
             titles = [next(f) for x in range(3)][2].split()
-            if titles[0] == 'det' and titles[1] == 'no':
+            if titles[0].startswith('det') and titles[1].startswith('no'):
                 titles = titles[1:]
             titles = ','.join(titles[6:])
         detdat = np.loadtxt(det_file, skiprows=3)
-        rv = {}
-        for fnm, idn in zip(['detectors', 'monitors'], [2, 1]):
-            idx = np.where(detdat[:,3] == idn)[0]
+        def _getsubset(detdat, fnm, idx):
             fd = {f'number_of_{fnm}': NXfield(np.array(len(idx), dtype='uint64'))}
             fd['detector_number'] = NXfield(detdat[idx,0].astype(np.int32))
             fd['detector_offset'] = NXfield(detdat[idx,1])
@@ -195,8 +193,10 @@ class Writer:
             fd['polar_angle'] = NXfield(detdat[idx,4], units='degree')
             fd['azimuthal_angle'] = NXfield(detdat[idx,5], units='degree')
             fd['user_table_titles'] = NXfield(titles)
+            fd['code'] = NXfield(detdat[idx,3])
             for j in range(6, detdat.shape[1]):
                 fd[f'user_table_{j-5}'] = NXfield(detdat[idx,j])
             assert len(titles.split(',')) == detdat.shape[1]-6, "Number of titles not commensurate with table width"
-            rv['instrument/physical_' + fnm] = NXdetector(**fd)
-        return rv
+            return fd
+        return {'instrument/physical_monitors': NXdetector(**_getsubset(detdat, 'monitors', np.where(detdat[:,3] == 1)[0])),
+                'instrument/physical_detectors': NXdetector(**_getsubset(detdat, 'detectors', np.where(detdat[:,3] != 1)[0]))}

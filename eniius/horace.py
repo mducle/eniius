@@ -65,30 +65,60 @@ def get_moderator_time_pulse(instrument, ei):
     kp = np.where(t < TMAX)[0]
     ie = np.where(en < np.log(ei))[0][-1]
     frac = (np.log(ei) - en[ie]) / (en[ie+1] - en[ie])
-    return intens[ie,kp] + frac * (intens[ie+1,kp] - intens[ie,kp]), t[kp]
+    return intens[ie,kp] + frac * (intens[ie+1,kp] - intens[ie,kp]), (t[kp] + t[kp+1]) / 2.
+
+
+def maps_flux_gain(ei):
+    l = np.sqrt(81.804201263673718 / np.array(ei))
+    if l > 4.5:
+        gain = 11.9644283524285 + 3.3130483907728 * (l - 4.5)
+    else:
+        gain = 1 + np.exp(-2.31186757913804 / l) * (23.2965476737752 + \
+                - 15.1289612048092 * l + 6.11185114079924 * l * l \
+                - 0.863318992430536 * l * l + 0.0439354263500835 * l * l * l)
+    return gain
+
+
+def merlin_flux_gain(ei):
+    l = np.sqrt(81.804201263673718 / np.array(ei))
+    if l > 3.5:
+        gain = 10.92390518545 + 5.0628835969606 * (l - 3.5)
+    else:
+        gain = 1 + 0.723584927461204 * l - 3.461019858758497 * l**2 \
+                 + 6.870176815937414 * l**3 - 3.962250897938358 * l**4 \
+                 + 0.960065940459538 * l**5 - 0.084008173502155 * l**6
+    return gain
 
 
 def get_fermi_data(instrument, freq, chopper):
     if instrument.lower() == 'maps':
         if chopper.lower().startswith('s'):
-            fermi_data = {'type':'sloppy', 'distance':NXfield(-1.857, **MU_),
-                          'rotation_speed':NXfield(freq, units='hertz'),
-                          'radius':NXfield(0.049, **MU_), 'r_slit':NXfield(1.3, **MU_),
-                          'slit':NXfield(0.002899, **MU_), 'number':9, 'width':NXfield(0.0522, **MU_)}
+            typ, rho, dslit = ('sloppy', 1.3, 0.002899)
         elif chopper.lower().startswith('a'):
-            pass
+            typ, rho, dslit = ('a', 1.3, 0.001087)
+        elif chopper.lower().startswith('b'):
+            typ, rho, dslit = ('b', 0.92, 0.001812)
         else:
             raise RuntimeError(f'Unrecognised chopper "{chopper}" for instrument "{instrument}"')
+        fermi_data = {'type':typ, 'distance':NXfield(-1.857, **MU_),
+                      'rotation_speed':NXfield(freq, units='hertz'),
+                      'radius':NXfield(0.049, **MU_), 'r_slit':NXfield(rho, **MU_),
+                      'slit':NXfield(dslit, **MU_), 'number':9, 'width':NXfield(0.0522, **MU_)}
     elif instrument.lower() == 'merlin':
         if chopper.lower().startswith('s'):
-            pass
+            typ, rho, dslit, rad = ('sloppy', 1.3, 0.00228, 0.049)
+        elif chopper.lower().startswith('a'):
+            typ, rho, dslit, rad = ('a', 1.3, 0.00228, 0.049)
+        elif chopper.lower().startswith('b'):
+            typ, rho, dslit, rad = ('b', 0.92, 0.00129, 0.049)
         elif chopper.lower().startswith('g'):
-            fermi_data = {'type':'g', 'distance':NXfield(-1.8, **MU_),
-                          'rotation_speed':NXfield(freq, units='hertz'),
-                          'radius':NXfield(0.005, **MU_), 'r_slit':NXfield(99999., **MU_),
-                          'slit':NXfield(2.0e-4, **MU_), 'number':125, 'width':NXfield(0.05, **MU_)}
+            typ, rho, dslit, rad = ('g', 99999., 2.0e-4, 0.005)
         else:
             raise RuntimeError(f'Unrecognised chopper "{chopper}" for instrument "{instrument}"')
+        fermi_data = {'type':typ, 'distance':NXfield(-1.8, **MU_),
+                      'rotation_speed':NXfield(freq, units='hertz'),
+                      'radius':NXfield(rad, **MU_), 'r_slit':NXfield(rho, **MU_),
+                      'slit':NXfield(dslit, **MU_), 'number':125, 'width':NXfield(0.05, **MU_)}
     else:
         raise RuntimeError(f'Unrecognised instrument "{instrument}"')
     return fermi_data
@@ -96,7 +126,7 @@ def get_fermi_data(instrument, freq, chopper):
 
 def let_instrument(ei, freq=None):
     if freq is None:
-        freq = [40., 240.]
+        freq = [80., 240.]
 
     inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
     inst['name'] = NXfield(value='LET', short_name='LET')
@@ -120,7 +150,7 @@ def let_instrument(ei, freq=None):
     d_ch1 = NXtransformations(CH1_T_AXIS=NXfield(-17.17, transformation_type='translation',
                                                  vector=[0.,0.,1.], depends_on='.', **MU_))
     sl = np.rad2deg(np.arctan2(0.04, 0.28) / 2.)
-    inst['shaping_chopper'] = NXdisk_chopper(rotation_speed=NXfield(freq[0], units='hertz'), radius=NXfield(0.28, **MU_),
+    inst['shaping_chopper'] = NXdisk_chopper(rotation_speed=NXfield(freq[0] / 2., units='hertz'), radius=NXfield(0.28, **MU_),
                                              type='contra_rotating_pair', slit_edges=[-sl, sl], transforms=d_ch1)
     d_ch5 = NXtransformations(CH5_T_AXIS=NXfield(-1.5, transformation_type='translation',
                                                  vector=[0.,0.,1.], depends_on='.', **MU_))
@@ -142,7 +172,8 @@ def maps_instrument(ei, freq=None, chopper='S'):
     # Defines the Aperture
     d_ap = NXtransformations(AP_AXIS=NXfield(-10.3290, transformation_type='translation',
                                              vector=[0.,0.,1.], depends_on='.', **MU_))
-    inst['aperture'] = NXslit(x_gap=NXfield(0.0989, **MU_), y_gap=NXfield(0.0989, **MU_),
+    fac = np.sqrt(maps_flux_gain(ei))
+    inst['aperture'] = NXslit(x_gap=NXfield(0.094*fac, **MU_), y_gap=NXfield(0.094*fac, **MU_),
                               transforms=d_ap)
     # Defines the Source
     inst['source'] = NXsource(Name='ISIS', type='Spallation Neutron Source',
@@ -174,7 +205,8 @@ def merlin_instrument(ei, freq=None, chopper='G'):
     # Defines the Aperture
     d_ap = NXtransformations(AP_AXIS=NXfield(-10.1570, transformation_type='translation',
                                              vector=[0.,0.,1.], depends_on='.', **MU_))
-    inst['aperture'] = NXslit(x_gap=NXfield(0.0967, **MU_), y_gap=NXfield(0.0967, **MU_),
+    fac = np.sqrt(merlin_flux_gain(ei))
+    inst['aperture'] = NXslit(x_gap=NXfield(0.094*fac, **MU_), y_gap=NXfield(0.094*fac, **MU_),
                               transforms=d_ap)
     # Defines the Source
     inst['source'] = NXsource(Name='ISIS', type='Spallation Neutron Source',

@@ -154,8 +154,8 @@ def _upload_assets(upload_url, token):
     assert token is not None, 'Need token for this action'
     import requests
     wheelpaths = None
-    if os.path.exists('wheelhouse'):
-        wheelpaths = [os.path.join('wheelhouse', ff) for ff in os.listdir('wheelhouse')]
+    if os.path.exists('dist'):
+        wheelpaths = [os.path.join('dist', ff) for ff in os.listdir('dist')]
     if wheelpaths is not None:
         for wheelpath in wheelpaths:
             wheelfile = os.path.basename(wheelpath)
