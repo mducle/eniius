@@ -28,19 +28,21 @@ def get_git_deps():
         for face in ['TS1_S01_Maps.mcstas', 'TS1_S04_Merlin.mcstas', 'TS2.imat']:
             shutil.copy2(os.path.join('mcstas-comps', 'contrib', 'ISIS_tables', face), contrib_dst)
         os.chdir(cwd)
-    if not os.path.exists('pychop'):
+    pychop_dst = os.path.join(cwd, 'eniius', 'pychop')
+    if not os.path.exists(pychop_dst):
         if not os.path.exists('pychop-git'):
             rv = subprocess.run(['git', 'clone', 'https://github.com/mducle/pychop', 'pychop-git', '--depth=1'])
             if rv.returncode != 0:
                 raise Exception(f'Could not clone PyChop from github')
-        shutil.copytree(os.path.join('pychop-git', 'PyChop'), 'pychop')
+        shutil.copytree(os.path.join('pychop-git', 'PyChop'), pychop_dst)
 
 
-def recurse_data_files(rootdir):
+def recurse_data_files(rootdir, extn=None):
     datfiles = []
     for root, _, files in os.walk(rootdir):
         for ff in files:
-            datfiles.append(os.path.join('..', root, ff))
+            if extn is None or extn in ff:
+                datfiles.append(os.path.join('..', root, ff))
     return datfiles
 
 
@@ -56,7 +58,7 @@ config = dict(
     description='A utility for embedding neutron instrument information using (nx)spe files.',
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
-    packages=['eniius', 'pychop'],
+    packages=['eniius', 'eniius.pychop'],
     install_requires = ['nexusformat>=0.7.8', 'mcstasscript>=0.0.54'],
     extras_require = {},
     url="https://github.com/mducle/eniius",
@@ -76,6 +78,7 @@ try:
     get_git_deps()
     data_files = recurse_data_files(os.path.join(os.path.dirname(__file__), 'eniius', 'mcstas-comps'))
     data_files += recurse_data_files(os.path.join(os.path.dirname(__file__), 'eniius', 'instruments'))
+    data_files += recurse_data_files(os.path.join(os.path.dirname(__file__), 'eniius', 'pychop'), '.yaml')
     config['package_data'] = {'eniius': data_files}
     setup(**config)
 except CalledProcessError:
