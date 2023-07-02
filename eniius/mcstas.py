@@ -509,8 +509,12 @@ class NXMcStas():
 
     def NXcomponent(self, name, order=0):
         # Returns a NXcomponent corresponding to a McStas component.
+        from libpyvinyl.Parameters.Parameter import Parameter
+        def value(param):
+            return param.value if isinstance(param, Parameter) else param
+
         comp = self.components[self.indices[name]]
-        mcpars = {p:getattr(comp, p) for p in comp.parameter_names}
+        mcpars = {p: value(getattr(comp, p)) for p in comp.parameter_names}
         return McStasComp2NX(comp, order, self.NXtransformations(name), **mcpars).nxobj
 
     def NXinstrument(self):
