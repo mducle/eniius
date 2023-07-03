@@ -294,6 +294,18 @@ class AffineRotate():
         self.transform = transformation_matrix
         self.depends_on = depends_on
 
+    def __str__(self):
+        axis, angle = self.axisrot()
+        t = self.transform[:3, 3]
+        lt = np.sqrt(np.sum(t**2))
+        rotate = f"{angle: 3.2f}°:{axis}" if angle != 0 else ""
+        both = " + " if (angle != 0 and lt != 0) else ""
+        translate = f"{t}" if lt != 0 else ""
+        return f"{rotate}{both}{translate}"
+
+    def __repr__(self):
+        return f"AffineRotate<{self}>"
+
     @classmethod
     def from_euler_translation(cls, euler_angles, translation_vector, depends_on='.'):
         # Constructor from McStas data using Euler angles and a translation
@@ -324,21 +336,25 @@ class AffineRotate():
         return cls(transform, depends_on)
 
     def axisrot(self):
+        from numpy.linalg import eig
+        from numpy import argmin, sqrt, real, imag, conj, sum, degrees, arccos, trace, abs
         # Computes the net rotation axis and rotation angle from the rotation matrix
         # https://en.wikipedia.org/wiki/Rotation_matrix#Conversion_from_rotation_matrix_to_axis%E2%80%93angle
-        dd, vv = np.linalg.eig(self.transform[:3, :3])
-        idx = np.where(np.abs(dd - 1) < 1.e-6)[0]
-        assert len(idx) > 0, "Error: Input transformation is not a chained rotation"
-        axis = vv[:, idx[0]]
+        dd, vv = eig(self.transform[:3, :3])
+        # One eigenvalue *must* be 1+0j; the others are a+bj and a-bj -- find the 1+0j eigenvector
+        axis = vv[:, argmin(sqrt(real(conj(dd-1) * (dd-1))))]
+        if sum(imag(axis)) != 0:
+            print(f"Warning: imaginary rotation axis {real(axis)} + j {imag(axis)}")
+        axis = real(axis)
         rotmat = self.transform[:3, :3]
         # Sign of rotation angle is not defined by the expression below (from matrix trace)
-        angle = np.degrees(np.arccos((np.trace(rotmat) - 1.) / 2.))
+        angle = degrees(arccos((trace(rotmat) - 1.) / 2.))
         # Checks that the computed axis and angles agree with the original matrix
         r2 = self.rodrigues(axis, angle)
-        if np.sum(np.abs(rotmat - r2)) > 1.e-5:
+        if sum(abs(rotmat - r2)) > 1.e-5:
             angle = -angle
             r2 = self.rodrigues(axis, angle)
-        assert np.sum(np.abs(rotmat - r2)) < 1.e-5, "Error computing the rotation axes and angles"
+        assert sum(abs(rotmat - r2)) < 1.e-5, "Error computing the rotation axes and angles"
         return axis, angle
 
     @staticmethod
