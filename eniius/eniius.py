@@ -75,9 +75,16 @@ class Eniius:
 
 
     @classmethod
+    def from_mcstasscript(cls, mss_obj, detector_dat=None, ei=None):
+        nxs_obj = NXMcStas(mss_obj).NXinstrument()
+        nxs_obj['name'] = NXfield(value=mss_obj.name)
+        return cls(nxs_obj, detector_dat, ei)
+
+
+    @classmethod
     def from_mcstas(cls, infile, detector_dat=None, ei=None):
         mcstas_obj = get_instr(infile)
-        nxs_obj = NXMcStas(mcstas_obj.component_list).NXinstrument()
+        nxs_obj = NXMcStas(mcstas_obj).NXinstrument()
         nxs_obj['name'] = NXfield(value=mcstas_obj.name)
         return cls(nxs_obj, detector_dat, ei)
 
