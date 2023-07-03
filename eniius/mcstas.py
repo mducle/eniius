@@ -239,13 +239,6 @@ class McStasComp2NX():
 
     @classmethod
     def Slit(cls, comp, **kw):
-        def to_float_or_string(value):
-            """Support string-named parameters; to allow replacement later"""
-            try:
-                return float(value)
-            except ValueError:
-                return value
-
         def dif(a, b):
             return f"{a} - {b}" if isinstance(a, str) or isinstance(b, str) else a - b
 
@@ -537,21 +530,28 @@ class NXMcStas():
 
     def NXinstrument(self):
         nxinst = NXinstrument()
-
-        # Follow the McStasScript instrument writing logic:
         nxinst['mcstas'] = mcstasscript_instrument_to_nx(self.instrument)
-
         for order, comp in enumerate(self.components):
             nxinst[comp.name] = self.NXcomponent(comp.name, order)
         return nxinst
 
 
+def _float_int_or_str(s: str):
+    # Parse a string to an integer if possible, or a float if numeric but not integer, or return the string
+    try:
+        v = float(s)
+        return int(v) if v.is_integer() else v
+    except ValueError:
+        return s
+        
+
 def mcstasscript_parameter_name_or_value(parameter):
     from mcstasscript.helper.mcstas_objects import DeclareVariable
     from libpyvinyl.Parameters.Parameter import Parameter
+    from ast import literal_eval
     if isinstance(parameter, (DeclareVariable, Parameter)):
         return parameter.name
-    return parameter
+    return _float_int_or_str(parameter)
 
 
 def mcstasscript_parameter_to_nexus(parameter, index=None):
@@ -568,6 +568,8 @@ def mcstasscript_parameter_to_nexus(parameter, index=None):
         return parameter, name
 
     attributes = {f: getattr(parameter, f) for f in fields if hasattr(parameter, f)}
+    # filter out empty-string (or anything equivalent to False) valued attributes since they cause problems :/
+    attributes = {k: v for k, v in attributes.items() if v}
     out = NXfield(**attributes)
     return out, parameter.name
 
@@ -581,12 +583,15 @@ def mcstasscript_parameter_list_to_nx(name, parameters):
 
 
 def mcstasscript_instrument_to_nx(instrument):
+    # Follow the McStasScript instrument writing logic:
     mcinst = NXcollection(name=instrument.name, version='3.3')
     mcinst['parameters'] = mcstasscript_parameter_list_to_nx('parameters', instrument.parameters)
     if instrument.dependency_statement:
         mcinst['dependency'] = instrument.dependency_statement
-    mcinst['declare'] = mcstasscript_parameter_list_to_nx('declare', instrument.declare_list)
-    mcinst['user_vars'] = mcstasscript_parameter_list_to_nx('user_vars', instrument.user_var_list)
+    if len(instrument.declare_list):
+        mcinst['declare'] = mcstasscript_parameter_list_to_nx('declare', instrument.declare_list)
+    if len(instrument.user_var_list):
+        mcinst['user_vars'] = mcstasscript_parameter_list_to_nx('user_vars', instrument.user_var_list)
     # dump the C code -- alternatively we could use https://github.com/eliben/pycparser to parse out results?
     mcinst['initialize'] = instrument.initialize_section
     # Same with finally
