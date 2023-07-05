@@ -53,6 +53,26 @@ def dict2NXobj(indict):
             outdict[k] = v
     return outdict
 
+
+def _decode_component_eniius_data(comp) -> dict:
+    """Extract the 'eniius_data' block from the component EXTEND statement
+
+    If found, decode the information and return a dictionary of contained NXobjects
+    """
+    from regex import compile
+    # char eniius_data[]\s*=\s*"([^"]*)";
+    if 'eniius_data' not in comp.EXTEND or comp.EXTEND.count('"') != 2:
+        return {}
+    between_double_quotes_regex = compile(r'[^"]*"([^"]*)"')
+    between_double_quotes = between_double_quotes_regex.match(comp.EXTEND)
+    # extract the matched group, remove all \n, \, and "; replace all ' by "
+    json_str = between_double_quotes.group(1).translate(str.maketrans("'", '"', '\n"\\'))
+    try:
+        return dict2NXobj(_sanitize(json.loads(json_str)))
+    except SyntaxError:
+        return {}
+
+
 # Only in nexusformat >= 1.0.0
 if not hasattr(nexus, 'NXoff_geometry'):
     NXoff_geometry = nexus.tree._makeclass('NXoff_geometry')
@@ -92,7 +112,7 @@ class NXoff():
         # Returns a NXoff_geometry field
         winding_order = [ww for fa in self.faces for ww in fa]
         faces = [0] + np.cumsum([len(self.faces[ii]) for ii in range(len(self.faces)-1)]).tolist()
-        vertices = NXfield(np.array(self.vertices, dtype='float64'), units='metre')
+        vertices = NXfield(np.array(self.vertices, dtype='float64'), units='m')
         return NXoff_geometry(vertices=vertices, winding_order=winding_order, faces=faces)
 
     @staticmethod
@@ -193,27 +213,16 @@ class McStasComp2NX():
         kwargs['mcstas_component'] = mcstas_comp.component_name
         kwargs['mcstas_order'] = mcstas_order
         for extra in ('EXTEND', 'GROUP', 'JUMP', 'SPLIT', 'WHEN'):
-            value = getattr(mcstas_comp, extra, False)
-            if value:
-                kwargs[f'mcstas_{extra.lower()}'] = value
+            attr = getattr(mcstas_comp, extra, False)
+            if attr:
+                kwargs[f'mcstas_{extra.lower()}'] = attr
 
         self.nxobj['mcstas'] = json.dumps(kwargs)
         self.nxobj['transforms'] = transforms
+        self.nxobj['depends_on'] = f'transforms/{_outer_transform_dependency(transforms)}'
 
-        # Look for eniius_data -- which is a JSON encoded Python method 
-        id_ext = mcstas_comp.EXTEND.find('eniius_data')
-        if id_ext > 0:
-            extstr = mcstas_comp.EXTEND[id_ext:]
-            id0 = extstr.find('"') + 1
-            id1 = extstr[id0:].find('"')
-            jsonstr = extstr[id0:(id0+id1)].replace('\n', '').replace('\\"','').replace('\'','"').replace('\\','')
-            try:
-                extras = json.loads(jsonstr)
-            except SyntaxError:
-                pass
-            else:
-                for k, v in dict2NXobj(_sanitize(extras)).items():
-                    self.nxobj[k] = v
+        for name, insert in _decode_component_eniius_data(mcstas_comp).items():
+            self.nxobj[name] = insert
 
     @classmethod
     def getNXtype(cls, comp):
@@ -454,6 +463,42 @@ def reduce_affine_transforms(affinelist):
     return new_list
 
 
+def _outer_transform_dependency(transformations):
+    """For a NXtransformations group, find the most-dependent transformation name
+
+    E.g., for
+    transforms:NXtransformations
+      rotation_angle
+        @depends_on=.
+      chi
+        @depends_on=rotation_angle
+      phi
+        @depends_on=chi
+
+    find and return 'phi' since it depends on 'chi', which depends on 'rotation_angle', which is independent
+
+    The dependency chain *must* be singular and fully contained in the NXtransformations object for this to work
+    """
+    names = list(transformations)
+    if len(names) == 1:
+        return names[0]
+    depends = {name: getattr(transformations, name).depends_on for name in names}
+    externals = [v for k, v in depends.items() if v not in depends]
+    if len(externals) != 1:
+        raise RuntimeError(f"Dependency chain should have one absolute dependency, found {externals} instead")
+
+    def dep_of(name):
+        d = [k for k, v in depends.items() if v == name]
+        if len(d) != 1:
+            raise RuntimeError(f'Expected one dependency of {name} but found dependencies: {d}')
+        return d[0]
+
+    chain = [dep_of(externals[0])]
+    while len(chain) < len(names):
+        chain.append(dep_of(chain[-1]))
+    return chain[-1]
+
+
 class NXMcStas():
     # Class to convert a McStas instrument definition embodied by a list of components to a NeXus file
 
@@ -473,7 +518,7 @@ class NXMcStas():
                 relate_at = self.component_name_from_index(ii-1)
             if relate_at != 'ABSOLUTE' and relate_at not in self.indices:
                 raise RuntimeError("Components can only be positioned relative to previously defined components")
-                
+
             self.transforms[comp.name] = AffineRotate.from_euler_translation(to_float(comp.ROTATED_data),
                                                                              to_float(comp.AT_data),
                                                                              depends_on=relate_at)
@@ -543,7 +588,7 @@ def _float_int_or_str(s: str):
         return int(v) if v.is_integer() else v
     except ValueError:
         return s
-        
+
 
 def mcstasscript_parameter_name_or_value(parameter):
     from mcstasscript.helper.mcstas_objects import DeclareVariable
