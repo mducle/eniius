@@ -57,7 +57,7 @@ config = dict(
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
     packages=['eniius', 'pychop'],
-    install_requires = ['nexusformat>=0.7.8', 'mcstasscript>=0.0.54'],
+    install_requires = ['nexusformat>=0.7.8', 'mcstasscript>=0.0.54', 'regex'],
     extras_require = {},
     url="https://github.com/mducle/eniius",
     zip_safe=False,

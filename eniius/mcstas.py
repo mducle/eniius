@@ -265,8 +265,8 @@ class McStasComp2NX():
         def dif(a, b):
             return f"{a} - {b}" if isinstance(a, str) or isinstance(b, str) else a - b
 
-        def neg_avg(a, b):
-            return f"-({a} + {b})/2" if isinstance(a, str) or isinstance(b, str) else (a + b) / 2
+        def avg(a, b):
+            return f"({a} + {b})/2" if isinstance(a, str) or isinstance(b, str) else (a + b) / 2
 
         params = {}
         # keyword arguments are only present if not-None
@@ -274,12 +274,12 @@ class McStasComp2NX():
             params['x_gap'], x_zero = kw['xwidth'], 0
         else:
             a, b = [kw.get(n, 0) for n in ('xmax', 'xmin')]
-            params['x_gap'], x_zero = dif(a, b), neg_avg(a, b)
+            params['x_gap'], x_zero = dif(a, b), avg(a, b)
         if 'ywidth' in kw:
             params['y_gap'], y_zero = kw['ywidth'], 0
         else:
             a, b = [kw.get(n, 0) for n in ('ymax', 'ymin')]
-            params['y_gap'], y_zero = dif(a, b), neg_avg(a, b)
+            params['y_gap'], y_zero = dif(a, b), avg(a, b)
 
         if x_zero or y_zero:
             print(f'The Slit {comp.name} should be translated by [{x_zero}, {y_zero}, 0], but this is not yet supported')
@@ -607,7 +607,6 @@ def _float_int_or_str(s: str):
 def mcstasscript_parameter_name_or_value(parameter):
     from mcstasscript.helper.mcstas_objects import DeclareVariable
     from libpyvinyl.Parameters.Parameter import Parameter
-    from ast import literal_eval
     if isinstance(parameter, (DeclareVariable, Parameter)):
         return parameter.name
     return _float_int_or_str(parameter)
@@ -617,9 +616,9 @@ def mcstasscript_parameter_to_nexus(parameter, index=None):
     from mcstasscript.helper.mcstas_objects import DeclareVariable
     from libpyvinyl.Parameters.Parameter import Parameter
     if isinstance(parameter, DeclareVariable):
-        fields = ('type', 'name','value', 'comment')
+        fields = ('type', 'name', 'value', 'comment')
     elif isinstance(parameter, Parameter):
-        fields = ('type', 'name','value', 'unit', 'comment')
+        fields = ('type', 'name', 'value', 'unit', 'comment')
     else:
         # str, float, int, list, ... can all be handled directly
         # (only str *should* be encountered, for %include library lines)
@@ -643,7 +642,7 @@ def mcstasscript_parameter_list_to_nx(name, parameters):
 
 def mcstasscript_instrument_to_nx(instrument):
     # Follow the McStasScript instrument writing logic:
-    mcinst = NXcollection(name=instrument.name, version='3.3')
+    mcinst = NXcollection(name=instrument.name, version=instrument.mccode_version)
     mcinst['parameters'] = mcstasscript_parameter_list_to_nx('parameters', instrument.parameters)
     if instrument.dependency_statement:
         mcinst['dependency'] = instrument.dependency_statement
