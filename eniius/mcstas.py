@@ -625,9 +625,8 @@ def mcstasscript_parameter_to_nexus(parameter, index=None):
         name = '__item__' if index is None else f'__item{index}__'
         return parameter, name
 
-    attributes = {f: getattr(parameter, f) for f in fields if hasattr(parameter, f)}
     # filter out empty-string (or anything equivalent to False) valued attributes since they cause problems :/
-    attributes = {k: v for k, v in attributes.items() if v}
+    attributes = {f: getattr(parameter, f) for f in fields if hasattr(parameter, f) and getattr(parameter, f)}
     out = NXfield(**attributes)
     return out, parameter.name
 
@@ -636,7 +635,8 @@ def mcstasscript_parameter_list_to_nx(name, parameters):
     nx = NXcollection(name=name)
     for i, p in enumerate(parameters):
         nxp, name = mcstasscript_parameter_to_nexus(p, index=i)
-        nx[name] = nxp
+        if name:
+            nx[name] = nxp
     return nx
 
 
