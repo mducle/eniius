@@ -54,8 +54,11 @@ def _sanitize(indict):
 
 def dict2NXobj(indict, only_nx=True):
     outdict = {}
+    def type_is_ok(t):
+        return not only_nx or t.startswith('NX')
+
     for k, v in indict.items():
-        if isinstance(v, dict) and all([f in v for f in ['type', 'value']]) and v['type'].startswith('NX'):
+        if isinstance(v, dict) and all([f in v for f in ['type', 'value']]) and type_is_ok(v['type']):
             if v['type'] == 'NXfield':
                 outdict[k] = NXfield(v['value'], **v.pop('attributes', {}))
             elif not only_nx and v['type'] == 'dict':
@@ -74,16 +77,28 @@ def _decode_component_eniius_data(comp, only_nx=True) -> dict:
     If found, decode the information and return a dictionary of contained NXobjects
     """
     from regex import compile
+    from json import JSONDecodeError
     # char eniius_data[]\s*=\s*"([^"]*)";
-    if 'eniius_data' not in comp.EXTEND or comp.EXTEND.count('"') != 2:
+    ed_regex = compile(r'.*eniius_data[^=]*=([^;]*);')
+    ed_match = ed_regex.match(comp.EXTEND)
+    if not ed_match:
         return {}
-    between_double_quotes_regex = compile(r'[^"]*"([^"]*)"')
-    between_double_quotes = between_double_quotes_regex.match(comp.EXTEND)
+    to_translate = ed_match.group(1)
+
+    # if 'eniius_data' not in comp.EXTEND or comp.EXTEND.count('"') != 2:
+    #     return {}
+    # between_double_quotes_regex = compile(r'[^"]*"([^"]*)"')
+    # between_double_quotes = between_double_quotes_regex.match(comp.EXTEND)
+    # to_translate = between_double_quotes.group(1)
+
     # extract the matched group, remove all \n, \, and "; replace all ' by "
-    json_str = between_double_quotes.group(1).translate(str.maketrans("'", '"', '\n"\\'))
+    json_str = to_translate.translate(str.maketrans("'", '"', '\n"\\'))
     try:
         return dict2NXobj(_sanitize(json.loads(json_str)), only_nx=only_nx)
     except SyntaxError:
+        return {}
+    except JSONDecodeError as er:
+        print(f"failed to decode\n{json_str}\ndue to error {er}")
         return {}
 
 
@@ -232,11 +247,23 @@ class McStasComp2NX():
                 kwargs[f'mcstas_{extra.lower()}'] = attr
 
         self.nxobj['mcstas'] = json.dumps(kwargs)
+
         self.nxobj['transforms'] = transforms
-        self.nxobj['depends_on'] = f'transforms/{_outer_transform_dependency(transforms)}'
+        most_dependent = _outer_transform_dependency(transforms)
 
         for name, insert in _decode_component_eniius_data(mcstas_comp, only_nx=only_nx).items():
             self.nxobj[name] = insert
+            # if transforms/name but not, e.g., transforms/name/value
+            if 'transforms' in name and name.count('/') == 1:
+                # add the same-level dependnecy link to the just-set transformation, if it doesn't have one already
+                # to allow for possibly overwriting an existing transformation
+                if not hasattr(self.nxobj[name], 'depends_on'):
+                    self.nxobj[name].attrs['depends_on'] = most_dependent
+                # since we may have overwritten or added a transformation, work out the dependency chain again
+                most_dependent = _outer_transform_dependency(self.nxobj['transforms'])
+
+        # set the object level dependency (not an attribute!) only now, in case it changed
+        self.nxobj['depends_on'] = f'transforms/{most_dependent}'
 
     @classmethod
     def getNXtype(cls, comp):
@@ -263,7 +290,7 @@ class McStasComp2NX():
     @classmethod
     def Slit(cls, comp, **kw):
         def dif(a, b):
-            return f"{a} - {b}" if isinstance(a, str) or isinstance(b, str) else a - b
+            return f"{b} - {a}" if isinstance(a, str) or isinstance(b, str) else b - a
 
         def avg(a, b):
             return f"({a} + {b})/2" if isinstance(a, str) or isinstance(b, str) else (a + b) / 2
@@ -281,9 +308,8 @@ class McStasComp2NX():
             ymax, ymin = [kw.get(n, 0) for n in ('ymax', 'ymin')]
             params['y_gap'], y_zero = dif(ymin, ymax), avg(ymin, ymax)
 
-        if x_zero or y_zero:
-            print(f'The Slit {comp.name} should be translated by [{x_zero}, {y_zero}, 0], but this is not yet supported')
-            # trans = AffineRotate.from_euler_translation([0, 0, 0], [x_zero, y_zero, 0])
+        if (x_zero or y_zero) and len(_decode_component_eniius_data(comp)) == 0:
+            print(f'The {comp.name} should be translated by [{x_zero}, {y_zero}, 0]; add eniius_data to EXTEND')
 
         return NXslit(**params)
 
@@ -585,7 +611,14 @@ class NXMcStas():
         # pull together component values (or instrument parameter names) for *defined* parameters
         # -- if a parameter is 'None' at this point, the Component default should be used
         mcpars = {p: mcstasscript_parameter_name_or_value(getattr(comp, p)) for p in comp.parameter_names if getattr(comp, p) is not None}
-        return McStasComp2NX(comp, order, self.NXtransformations(name), only_nx=only_nx, **mcpars).nxobj
+
+        nxcomp = McStasComp2NX(comp, order, self.NXtransformations(name), only_nx=only_nx, **mcpars)
+        if nxcomp.nxobj['transforms'] != self.NXtransformations(name):
+            # the component updated the transforms NXtransformations group
+            # invalidate the associated affinelist to avoid using the wrong position?
+            self.affinelist[name] = None
+        return nxcomp.nxobj
+
 
     def NXinstrument(self, only_nx=True):
         nxinst = NXinstrument()

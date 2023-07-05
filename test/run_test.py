@@ -122,6 +122,46 @@ class EniiusTest(unittest.TestCase):
         # Check that extraneous empty parameters do not get saved:
         self.assertTrue(len([x for x in parameters if x['config']['name'] == '']) == 0)
 
+    def test_save_slit_json_from_mcstas(self):
+        jsonfile = os.path.join(self.tmpdir.name, 'mcstas.json')
+        instrfile = os.path.join(self.rootdir, '..', 'test', 'one_slit_explicit.instr')
+        wrapper = eniius.Eniius.from_mcstas(instrfile)
+        wrapper.to_json(jsonfile)
+        with open(jsonfile) as file:
+            data = json.load(file)
+
+        nx_class_fields = ('name', 'type', 'children', 'attributes')
+
+        self.assertTrue(len(data) == 1)
+        self.assertTrue('children' in data)
+        children = data['children']
+        self.assertTrue(len(children) == 1)
+
+        root = children[0]
+        for field in nx_class_fields:
+            self.assertTrue(field in root)
+        self.assertTrue('root' == root['name'])
+        self.assertTrue(len(root['children']) == 1)
+        self.assertTrue(len(root['attributes']) == 1)
+        self.assertTrue(root['attributes'][0]['values'] == 'NXentry')
+
+        instrument = root['children'][0]
+        for field in nx_class_fields:
+            self.assertTrue(field in instrument)
+        self.assertTrue(len(instrument['children']) == 5)
+        self.assertTrue(len(instrument['attributes']) == 1)
+        self.assertTrue(instrument['attributes'][0]['values'] == 'NXinstrument')
+
+        named_children = [x for x in instrument['children'] if 'name' in x]
+        self.assertTrue(len(named_children) == 4)
+        self.assertTrue('mcstas' in [x['name'] for x in named_children])
+        mcstas_children = [x for x in named_children if x['name'] == 'mcstas']
+        self.assertTrue(len(mcstas_children) == 1)
+
+        for field in nx_class_fields:
+            self.assertTrue(field in mcstas_children[0])
+        named_mcstas_children = [x for x in mcstas_children[0]['children'] if 'name' in x]
+        self.assertFalse('declare' in [x['name'] for x in named_mcstas_children])
 
 if __name__ == '__main__':
     unittest.main()
