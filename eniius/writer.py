@@ -30,7 +30,7 @@ nexusformat.nexus.tree.NXFile._writedata = new_wd
 from nexusformat.nexus import *
 
 
-def conv_types(obj):
+def conv_types(obj, only_nx=True):
     typ = type(obj)
     dtyp = np.dtype(typ)
     if dtyp.name == 'object':
@@ -50,6 +50,9 @@ def conv_types(obj):
                 (tp, vl) = (np.dtype(type(obj.nxdata)).name, val)
             else:
                 (tp, vl) = (obj.dtype, val)
+        elif not only_nx and hasattr(obj, 'to_json_dict'):
+            # Shoe-horn in an object-defined dictionary:
+            tp, vl = None, obj.to_json_dict()
         else:
             raise RuntimeError(f'unrecognised type {typ} / {dtyp}')
     else:
@@ -99,39 +102,46 @@ class Writer:
             self.nxobj = NXroot()
             self.nxobj[self.rootname] = nxentry
 
+    def to_json(self, filename, indent=4, only_nx=True):
+        """Convert a NeXus object to a JSON-compatible dictionary, then write that to file
 
-    def to_json(self, invar):
-        # Converts a NeXus object to a JSON-compatible dictionary
-        outfile, nxobj = (invar, self.nxobj) if isinstance(invar, str) else (None, invar)
+        Parameters:
+            filename: str - where to write the JSON string, '.json' will be appended if not present
+            indent: int - nested JSON indentation depth, default 4
+            only_nx: bool - whether non-NeXus objects found in the tree raise an error, default=True
+        """
+        if not filename.endswith('.json'):
+            filename = f'{filename}.json'
+        to_write = json.dumps(dict(children=self._to_json_dict(self.nxobj, only_nx=only_nx)), indent=indent)
+        with open(filename, 'w') as file:
+            file.write(to_write)
+
+    def _to_json_dict(self, top_obj, only_nx=True):
+        """Recursive transversal of NXobject tree conversion to JSON-compatible dict"""
         children = []
-        for k, obj in nxobj.items():
+        for name, obj in top_obj.items():
             if hasattr(obj, 'nxclass'):
+                attrs = []
                 if obj.nxclass == 'NXfield':
-                    typ, val = conv_types(obj.nxdata)
-                    entry = {'module':'dataset',
-                             'config':{'name':k, 'values':val, 'type':typ}}
-                    attrs = []
+                    typ, val = conv_types(obj.nxdata, only_nx)
+                    entry = dict(module='dataset', config=dict(name=name, values=val, type=typ)) if typ else val
                 else:
-                    entry = {'name':k, 'type':'group'}
-                    attrs = [{'name':'NX_class', 'dtype':'string', 'values':obj.nxclass}]
-                    if len(obj._entries) > 0:
-                        entry['children'] = self.to_json(obj)
+                    entry = dict(name=name, type='group')
+                    attrs = [dict(name='NX_class', dtype='string', values=obj.nxclass)]
+                    if len(list(obj)):
+                        entry['children'] = self._to_json_dict(obj, only_nx=only_nx)
+                for n, v in obj.attrs.items():
+                    typ, val = conv_types(v, only_nx)
+                    attrs.append(dict(name=n, dtype=typ, values=val) if typ else val)
+                if len(attrs):
+                    entry['attributes'] = attrs
+            elif not only_nx and hasattr(obj, 'to_json_dict'):
+                # This branch is unreachable because any Python object added to a NXobject gets wrapped in NXfield
+                entry = obj.to_json_dict()
             else:
-                raise RuntimeError(f'unrecognised object key {k}')
-            for n, v in obj.attrs.items():
-                typ, val = conv_types(v)
-                attrs.append({'name':n, 'dtype':typ, 'values':val})
-            if len(attrs) > 0:
-                entry['attributes'] = attrs
+                raise RuntimeError(f'Unrecognized object key {name}')
             children.append(entry)
-        if outfile is not None:
-            if not outfile.endswith('.json'):
-                outfile += '.json'
-            with open(outfile, 'w') as f:
-                f.write(json.dumps({'children':children}, indent=4))
-        else:
-            return children
-
+        return children
 
     def to_nxspe(self, outfile, ei=25, det_file=None):
         if not outfile.endswith('.nxspe'):

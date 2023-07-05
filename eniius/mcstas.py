@@ -13,6 +13,18 @@ instr_path = os.path.join(cur_path, 'instruments')
 comps_path = os.path.join(cur_path, 'mcstas-comps')
 
 
+class NotNXdict:
+    """Wrapper class to prevent NXfield-parsing of the held dictionary"""
+    def __init__(self, v: dict):
+        self.value = v
+
+    def to_json_dict(self):
+        return self.value
+
+    def __repr__(self):
+        return f"NotNXdict<{self.value}>"
+
+
 def get_instr(instrfile):
     instname = os.path.basename(instrfile).replace('.instr', '')
     inst = mcstasscript.McStas_instr(instname, package_path=comps_path)
@@ -40,12 +52,14 @@ def _sanitize(indict):
     return indict
 
 
-def dict2NXobj(indict):
+def dict2NXobj(indict, only_nx=True):
     outdict = {}
     for k, v in indict.items():
         if isinstance(v, dict) and all([f in v for f in ['type', 'value']]) and v['type'].startswith('NX'):
             if v['type'] == 'NXfield':
                 outdict[k] = NXfield(v['value'], **v.pop('attributes', {}))
+            elif not only_nx and v['type'] == 'dict':
+                outdict[k] = NotNXdict(v['value'])
             else:
                 nxobj = getattr(nexus, v.pop('type'))
                 outdict[k] = nxobj(**v.pop('value'))
@@ -54,7 +68,7 @@ def dict2NXobj(indict):
     return outdict
 
 
-def _decode_component_eniius_data(comp) -> dict:
+def _decode_component_eniius_data(comp, only_nx=True) -> dict:
     """Extract the 'eniius_data' block from the component EXTEND statement
 
     If found, decode the information and return a dictionary of contained NXobjects
@@ -68,7 +82,7 @@ def _decode_component_eniius_data(comp) -> dict:
     # extract the matched group, remove all \n, \, and "; replace all ' by "
     json_str = between_double_quotes.group(1).translate(str.maketrans("'", '"', '\n"\\'))
     try:
-        return dict2NXobj(_sanitize(json.loads(json_str)))
+        return dict2NXobj(_sanitize(json.loads(json_str)), only_nx=only_nx)
     except SyntaxError:
         return {}
 
@@ -204,7 +218,7 @@ class McStasComp2NX():
         ViewModISIS = 'NXmoderator',
     )
 
-    def __init__(self, mcstas_comp, mcstas_order, transforms, **kwargs):
+    def __init__(self, mcstas_comp, mcstas_order, transforms, only_nx=True, **kwargs):
         mcstas_name = mcstas_comp.component_name
         # grab the bound method object for the matching Name.comp (if it exists)
         method = getattr(self, mcstas_name, self.default_translation)
@@ -221,7 +235,7 @@ class McStasComp2NX():
         self.nxobj['transforms'] = transforms
         self.nxobj['depends_on'] = f'transforms/{_outer_transform_dependency(transforms)}'
 
-        for name, insert in _decode_component_eniius_data(mcstas_comp).items():
+        for name, insert in _decode_component_eniius_data(mcstas_comp, only_nx=only_nx).items():
             self.nxobj[name] = insert
 
     @classmethod
@@ -565,19 +579,19 @@ class NXMcStas():
             transdict[f'{name}{idx}'] = trans.NXfield()
         return NXtransformations(**transdict)
 
-    def NXcomponent(self, name, order=0):
+    def NXcomponent(self, name, order=0, only_nx=True):
         # Returns a NXcomponent corresponding to a McStas component.
         comp = self.components[self.indices[name]]
         # pull together component values (or instrument parameter names) for *defined* parameters
         # -- if a parameter is 'None' at this point, the Component default should be used
         mcpars = {p: mcstasscript_parameter_name_or_value(getattr(comp, p)) for p in comp.parameter_names if getattr(comp, p) is not None}
-        return McStasComp2NX(comp, order, self.NXtransformations(name), **mcpars).nxobj
+        return McStasComp2NX(comp, order, self.NXtransformations(name), only_nx=only_nx, **mcpars).nxobj
 
-    def NXinstrument(self):
+    def NXinstrument(self, only_nx=True):
         nxinst = NXinstrument()
         nxinst['mcstas'] = mcstasscript_instrument_to_nx(self.instrument)
         for order, comp in enumerate(self.components):
-            nxinst[comp.name] = self.NXcomponent(comp.name, order)
+            nxinst[comp.name] = self.NXcomponent(comp.name, order, only_nx=only_nx)
         return nxinst
 
 
