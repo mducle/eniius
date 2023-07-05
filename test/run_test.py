@@ -124,7 +124,7 @@ class EniiusTest(unittest.TestCase):
 
     def test_save_slit_json_from_mcstas(self):
         jsonfile = os.path.join(self.tmpdir.name, 'mcstas.json')
-        instrfile = os.path.join(self.rootdir, '..', 'test', 'one_slit_explicit.instr')
+        instrfile = os.path.join(self.rootdir, 'instruments', 'one_slit_explicit.instr')
         wrapper = eniius.Eniius.from_mcstas(instrfile)
         wrapper.to_json(jsonfile)
         with open(jsonfile) as file:
