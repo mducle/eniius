@@ -273,13 +273,13 @@ class McStasComp2NX():
         if 'xwidth' in kw:
             params['x_gap'], x_zero = kw['xwidth'], 0
         else:
-            a, b = [kw.get(n, 0) for n in ('xmax', 'xmin')]
-            params['x_gap'], x_zero = dif(a, b), avg(a, b)
+            xmax, xmin = [kw.get(n, 0) for n in ('xmax', 'xmin')]
+            params['x_gap'], x_zero = dif(xmin, xmax), avg(xmin, xmax)
         if 'ywidth' in kw:
             params['y_gap'], y_zero = kw['ywidth'], 0
         else:
-            a, b = [kw.get(n, 0) for n in ('ymax', 'ymin')]
-            params['y_gap'], y_zero = dif(a, b), avg(a, b)
+            ymax, ymin = [kw.get(n, 0) for n in ('ymax', 'ymin')]
+            params['y_gap'], y_zero = dif(ymin, ymax), avg(ymin, ymax)
 
         if x_zero or y_zero:
             print(f'The Slit {comp.name} should be translated by [{x_zero}, {y_zero}, 0], but this is not yet supported')
