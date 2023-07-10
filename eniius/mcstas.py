@@ -13,6 +13,18 @@ instr_path = os.path.join(cur_path, 'instruments')
 comps_path = os.path.join(cur_path, 'mcstas-comps')
 
 
+class NotNXdict:
+    """Wrapper class to prevent NXfield-parsing of the held dictionary"""
+    def __init__(self, v: dict):
+        self.value = v
+
+    def to_json_dict(self):
+        return self.value
+
+    def __repr__(self):
+        return f"NotNXdict<{self.value}>"
+
+
 def get_instr(instrfile):
     instname = os.path.basename(instrfile).replace('.instr', '')
     inst = mcstasscript.McStas_instr(instname, package_path=comps_path)
@@ -40,18 +52,55 @@ def _sanitize(indict):
     return indict
 
 
-def dict2NXobj(indict):
+def dict2NXobj(indict, only_nx=True):
     outdict = {}
+    def type_is_ok(t):
+        return not only_nx or t.startswith('NX')
+
     for k, v in indict.items():
-        if isinstance(v, dict) and all([f in v for f in ['type', 'value']]) and v['type'].startswith('NX'):
+        if isinstance(v, dict) and all([f in v for f in ['type', 'value']]) and type_is_ok(v['type']):
             if v['type'] == 'NXfield':
                 outdict[k] = NXfield(v['value'], **v.pop('attributes', {}))
+            elif not only_nx and v['type'] == 'dict':
+                outdict[k] = NotNXdict(v['value'])
             else:
                 nxobj = getattr(nexus, v.pop('type'))
                 outdict[k] = nxobj(**v.pop('value'))
         else:
             outdict[k] = v
     return outdict
+
+
+def _decode_component_eniius_data(comp, only_nx=True) -> dict:
+    """Extract the 'eniius_data' block from the component EXTEND statement
+
+    If found, decode the information and return a dictionary of contained NXobjects
+    """
+    from regex import compile
+    from json import JSONDecodeError
+    # char eniius_data[]\s*=\s*"([^"]*)";
+    ed_regex = compile(r'.*eniius_data[^=]*=([^;]*);')
+    ed_match = ed_regex.match(comp.EXTEND)
+    if not ed_match:
+        return {}
+    to_translate = ed_match.group(1)
+
+    # if 'eniius_data' not in comp.EXTEND or comp.EXTEND.count('"') != 2:
+    #     return {}
+    # between_double_quotes_regex = compile(r'[^"]*"([^"]*)"')
+    # between_double_quotes = between_double_quotes_regex.match(comp.EXTEND)
+    # to_translate = between_double_quotes.group(1)
+
+    # extract the matched group, remove all \n, \, and "; replace all ' by "
+    json_str = to_translate.translate(str.maketrans("'", '"', '\n"\\'))
+    try:
+        return dict2NXobj(_sanitize(json.loads(json_str)), only_nx=only_nx)
+    except SyntaxError:
+        return {}
+    except JSONDecodeError as er:
+        print(f"failed to decode\n{json_str}\ndue to error {er}")
+        return {}
+
 
 # Only in nexusformat >= 1.0.0
 if not hasattr(nexus, 'NXoff_geometry'):
@@ -92,7 +141,7 @@ class NXoff():
         # Returns a NXoff_geometry field
         winding_order = [ww for fa in self.faces for ww in fa]
         faces = [0] + np.cumsum([len(self.faces[ii]) for ii in range(len(self.faces)-1)]).tolist()
-        vertices = NXfield(np.array(self.vertices, dtype='float64'), units='metre')
+        vertices = NXfield(np.array(self.vertices, dtype='float64'), units='m')
         return NXoff_geometry(vertices=vertices, winding_order=winding_order, faces=faces)
 
     @staticmethod
@@ -184,36 +233,37 @@ class McStasComp2NX():
         ViewModISIS = 'NXmoderator',
     )
 
-    def __init__(self, mcstas_comp, mcstas_order, transforms, **kwargs):
+    def __init__(self, mcstas_comp, mcstas_order, transforms, only_nx=True, **kwargs):
         mcstas_name = mcstas_comp.component_name
-        try:
-            self.nxobj = getattr(self, mcstas_name)(**kwargs)
-        except AttributeError:
-            nxtype = self.getNXtype(mcstas_comp)
-            ctor = getattr(nexus, nxtype)
-            params = {}
-            if nxtype in NX2COMP_MAP:
-                for nxpar, mcstaspar in NX2COMP_MAP[nxtype][1].items():
-                    params[nxpar] = getattr(mcstas_comp, mcstaspar)
-            self.nxobj = ctor(**params)
+        # grab the bound method object for the matching Name.comp (if it exists)
+        method = getattr(self, mcstas_name, self.default_translation)
+        self.nxobj = method(mcstas_comp, **kwargs)
+
         kwargs['mcstas_component'] = mcstas_comp.component_name
         kwargs['mcstas_order'] = mcstas_order
-        self.nxobj['mcstas'] = json.dumps(kwargs)
-        self.nxobj['transforms'] = transforms
-        id_ext = mcstas_comp.EXTEND.find('eniius_data')
-        if id_ext > 0:
-            extstr = mcstas_comp.EXTEND[id_ext:]
-            id0 = extstr.find('"') + 1
-            id1 = extstr[id0:].find('"')
-            jsonstr = extstr[id0:(id0+id1)].replace('\n', '').replace('\\"','').replace('\'','"').replace('\\','')
-            try:
-                extras = json.loads(jsonstr)
-            except SyntaxError:
-                pass
-            else:
-                for k, v in dict2NXobj(_sanitize(extras)).items():
-                    self.nxobj[k] = v
+        for extra in ('EXTEND', 'GROUP', 'JUMP', 'SPLIT', 'WHEN'):
+            attr = getattr(mcstas_comp, extra, False)
+            if attr:
+                kwargs[f'mcstas_{extra.lower()}'] = attr
 
+        self.nxobj['mcstas'] = json.dumps(kwargs)
+
+        self.nxobj['transforms'] = transforms
+        most_dependent = _outer_transform_dependency(transforms)
+
+        for name, insert in _decode_component_eniius_data(mcstas_comp, only_nx=only_nx).items():
+            self.nxobj[name] = insert
+            # if transforms/name but not, e.g., transforms/name/value
+            if 'transforms' in name and name.count('/') == 1:
+                # add the same-level dependnecy link to the just-set transformation, if it doesn't have one already
+                # to allow for possibly overwriting an existing transformation
+                if not hasattr(self.nxobj[name], 'depends_on'):
+                    self.nxobj[name].attrs['depends_on'] = most_dependent
+                # since we may have overwritten or added a transformation, work out the dependency chain again
+                most_dependent = _outer_transform_dependency(self.nxobj['transforms'])
+
+        # set the object level dependency (not an attribute!) only now, in case it changed
+        self.nxobj['depends_on'] = f'transforms/{most_dependent}'
 
     @classmethod
     def getNXtype(cls, comp):
@@ -232,33 +282,43 @@ class McStasComp2NX():
             return nxtype[0]
 
     @classmethod
-    def Slit(cls, **kw):
-        def to_float_or_string(value):
-            """Support string-named parameters; to allow replacement later"""
-            try:
-                return float(value)
-            except ValueError:
-                return value
+    def default_translation(cls, comp, **kw):
+        nxtype = cls.getNXtype(comp)
+        nx2mcs = NX2COMP_MAP.get(nxtype, ({}, {}))[1]
+        return getattr(nexus, nxtype)(**{nx: getattr(comp, mcs) for nx, mcs in nx2mcs.items()})
 
+    @classmethod
+    def Slit(cls, comp, **kw):
         def dif(a, b):
-            a = to_float_or_string(a)
-            b = to_float_or_string(b)
-            if isinstance(a, str) or isinstance(b, str):
-                return f"{a} - {b}"
-            return a - b
+            return f"{b} - {a}" if isinstance(a, str) or isinstance(b, str) else b - a
 
-        # The slit should be moved (via a NXbeam?) to correctly support non-symmetric openings; but this is not easy.
+        def avg(a, b):
+            return f"({a} + {b})/2" if isinstance(a, str) or isinstance(b, str) else (a + b) / 2
+
         params = {}
-        params['x_gap'] = kw['xwidth'] if kw['xwidth'] else dif(kw['xmax'], kw['xmin'])
-        params['y_gap'] = kw['yheight'] if kw['yheight'] else dif(kw['ymax'], kw['ymin'])
+        # keyword arguments are only present if not-None
+        if 'xwidth' in kw:
+            params['x_gap'], x_zero = kw['xwidth'], 0
+        else:
+            xmax, xmin = [kw.get(n, 0) for n in ('xmax', 'xmin')]
+            params['x_gap'], x_zero = dif(xmin, xmax), avg(xmin, xmax)
+        if 'ywidth' in kw:
+            params['y_gap'], y_zero = kw['ywidth'], 0
+        else:
+            ymax, ymin = [kw.get(n, 0) for n in ('ymax', 'ymin')]
+            params['y_gap'], y_zero = dif(ymin, ymax), avg(ymin, ymax)
+
+        if (x_zero or y_zero) and len(_decode_component_eniius_data(comp)) == 0:
+            print(f'The {comp.name} should be translated by [{x_zero}, {y_zero}, 0]; add eniius_data to EXTEND')
+
         return NXslit(**params)
 
     @classmethod
-    def Diaphragm(cls, **kw):
-        return cls.Slit(**kw)
+    def Diaphragm(cls, comp, **kw):
+        return cls.Slit(comp, **kw)
 
     @classmethod
-    def Guide(cls, **kw):
+    def Guide(cls, comp, **kw):
         geometry = NXoff.from_wedge(l=kw['l'], w1=kw['w1'], h1=kw['h1'], w2=kw.pop('w2', None), h2=kw.pop('h2', None))
         params = {'geometry':geometry.to_nexus()}
         if 'm' in kw:
@@ -266,23 +326,23 @@ class McStasComp2NX():
         return NXguide(**params)
 
     @classmethod
-    def Guide_channeled(cls, **kw):
-        return cls.Guide(**kw)
+    def Guide_channeled(cls, comp, **kw):
+        return cls.Guide(comp, **kw)
 
     @classmethod
-    def Guide_gravity(cls, **kw):
-        return cls.Guide(**kw)
+    def Guide_gravity(cls, comp, **kw):
+        return cls.Guide(comp, **kw)
 
     @classmethod
-    def Guide_simple(cls, **kw):
-        return cls.Guide(**kw)
+    def Guide_simple(cls, comp, **kw):
+        return cls.Guide(comp, **kw)
 
     @classmethod
-    def Guide_wavy(cls, **kw):
-        return cls.Guide(**kw)
+    def Guide_wavy(cls, comp, **kw):
+        return cls.Guide(comp, **kw)
 
     @classmethod
-    def Collimator_linear(cls, **kw):
+    def Collimator_linear(cls, comp, **kw):
         geometry = NXoff.from_wedge(l=kw['length'], w1=kw['xwidth'], h1=kw['yheight'])
         params = {'divergence_x':kw['divergence'], 'divergence_y':kw['divergenceV'], 'geometry':geometry.to_nexus()}
         return NXcollimator(**params)
@@ -422,16 +482,74 @@ class AffineRotate():
                            transformation_type='rotation', units='degree')
 
 
+def reduce_affine_transforms(affinelist):
+    # Checks if successive transformations could be concatenated
+    if len(affinelist) < 2:
+        return affinelist
+    new_list, transform_added = ([], False)
+    tr1 = affinelist[0]
+    for ii in range(1, len(affinelist)):
+        tr2 = affinelist[ii]
+        mat = np.matmul(tr1.transform, tr2.transform)
+        try:
+            tr1 = AffineRotate(transformation_matrix=mat, depends_on=tr2.depends_on)
+            transform_added = False
+        except AssertionError:
+            new_list.append(tr1)
+            tr1 = tr2
+            transform_added = True
+    if not transform_added:
+        new_list.append(tr1)
+    return new_list
+
+
+def _outer_transform_dependency(transformations):
+    """For a NXtransformations group, find the most-dependent transformation name
+
+    E.g., for
+    transforms:NXtransformations
+      rotation_angle
+        @depends_on=.
+      chi
+        @depends_on=rotation_angle
+      phi
+        @depends_on=chi
+
+    find and return 'phi' since it depends on 'chi', which depends on 'rotation_angle', which is independent
+
+    The dependency chain *must* be singular and fully contained in the NXtransformations object for this to work
+    """
+    names = list(transformations)
+    if len(names) == 1:
+        return names[0]
+    depends = {name: getattr(transformations, name).depends_on for name in names}
+    externals = [v for k, v in depends.items() if v not in depends]
+    if len(externals) != 1:
+        raise RuntimeError(f"Dependency chain should have one absolute dependency, found {externals} instead")
+
+    def dep_of(name):
+        d = [k for k, v in depends.items() if v == name]
+        if len(d) != 1:
+            raise RuntimeError(f'Expected one dependency of {name} but found dependencies: {d}')
+        return d[0]
+
+    chain = [dep_of(externals[0])]
+    while len(chain) < len(names):
+        chain.append(dep_of(chain[-1]))
+    return chain[-1]
+
+
 class NXMcStas():
     # Class to convert a McStas instrument definition embodied by a list of components to a NeXus file
 
-    def __init__(self, components_list):
+    def __init__(self, mcstasscript_instrument):
+        self.instrument = mcstasscript_instrument
         self.transforms = {}
         self.depends_on = {}
         self.components = []
         self.affinelist = {}
         self.indices = {}
-        for ii, comp in enumerate(components_list):
+        for ii, comp in enumerate(self.instrument.component_list):
             relate_at = comp.AT_relative.replace('RELATIVE ', '')
             relate_rot = comp.ROTATED_relative.replace('RELATIVE ', '')
             if (relate_at != relate_rot) and (relate_rot != 'ABSOLUTE') and (relate_at != 'ABSOLUTE'):
@@ -440,7 +558,7 @@ class NXMcStas():
                 relate_at = self.component_name_from_index(ii-1)
             if relate_at != 'ABSOLUTE' and relate_at not in self.indices:
                 raise RuntimeError("Components can only be positioned relative to previously defined components")
-                
+
             self.transforms[comp.name] = AffineRotate.from_euler_translation(to_float(comp.ROTATED_data),
                                                                              to_float(comp.AT_data),
                                                                              depends_on=relate_at)
@@ -456,7 +574,7 @@ class NXMcStas():
                 self.affinelist[comp.name].append(self.transforms[node])
         # Horace and Mantid sets the origin at the sample position.
         # For compatibility, we define NeXus files with the origin there if possible
-        samp = [comp for comp in components_list if comp.category == 'samples']
+        samp = [comp for comp in self.components if comp.category == 'samples']
         if len(samp) == 0:
             warnings.warn("Instrument does not have a sample. Will use the McStas "
                           "ABSOLUTE positions", warnings.RuntimeWarning)
@@ -472,27 +590,7 @@ class NXMcStas():
             if name == self.origin:
                 self.affinelist[name] = [AffineRotate.from_euler_translation([0, 0, 0], [0, 0, 0])]
                 continue
-            self.affinelist[name] = self._reduce_transforms(self.affinelist[name] + rev_trans)
-
-    def _reduce_transforms(self, affinelist):
-        # Checks if successive transformations could be concatenated
-        if len(affinelist) < 2:
-            return affinelist
-        new_list, transform_added = ([], False)
-        tr1 = affinelist[0]
-        for ii in range(1, len(affinelist)):
-            tr2 = affinelist[ii]
-            mat = np.matmul(tr1.transform, tr2.transform)
-            try:
-                tr1 = AffineRotate(transformation_matrix=mat, depends_on=tr2.depends_on)
-                transform_added = False
-            except AssertionError:
-                new_list.append(tr1)
-                tr1 = tr2
-                transform_added = True
-        if not transform_added:
-            new_list.append(tr1)
-        return new_list
+            self.affinelist[name] = reduce_affine_transforms(self.affinelist[name] + rev_trans)
 
     def component_name_from_index(self, index: int) -> str:
         for name, ii in self.indices.items():
@@ -507,16 +605,90 @@ class NXMcStas():
             transdict[f'{name}{idx}'] = trans.NXfield()
         return NXtransformations(**transdict)
 
-    def NXcomponent(self, name, order=0):
+    def NXcomponent(self, name, order=0, only_nx=True):
         # Returns a NXcomponent corresponding to a McStas component.
         comp = self.components[self.indices[name]]
-        mcpars = {p:getattr(comp, p) for p in comp.parameter_names}
-        return McStasComp2NX(comp, order, self.NXtransformations(name), **mcpars).nxobj
+        # pull together component values (or instrument parameter names) for *defined* parameters
+        # -- if a parameter is 'None' at this point, the Component default should be used
+        mcpars = {p: mcstasscript_parameter_name_or_value(getattr(comp, p)) for p in comp.parameter_names if getattr(comp, p) is not None}
 
-    def NXinstrument(self):
+        nxcomp = McStasComp2NX(comp, order, self.NXtransformations(name), only_nx=only_nx, **mcpars)
+        if nxcomp.nxobj['transforms'] != self.NXtransformations(name):
+            # the component updated the transforms NXtransformations group
+            # invalidate the associated affinelist to avoid using the wrong position?
+            self.affinelist[name] = None
+        return nxcomp.nxobj
+
+
+    def NXinstrument(self, only_nx=True):
         nxinst = NXinstrument()
+        nxinst['mcstas'] = mcstasscript_instrument_to_nx(self.instrument)
         for order, comp in enumerate(self.components):
-            nxinst[comp.name] = self.NXcomponent(comp.name, order)
+            nxinst[comp.name] = self.NXcomponent(comp.name, order, only_nx=only_nx)
         return nxinst
+
+
+def _float_int_or_str(s: str):
+    # Parse a string to an integer if possible, or a float if numeric but not integer, or return the string
+    try:
+        v = float(s)
+        return int(v) if v.is_integer() else v
+    except ValueError:
+        return s
+
+
+def mcstasscript_parameter_name_or_value(parameter):
+    from mcstasscript.helper.mcstas_objects import DeclareVariable
+    from libpyvinyl.Parameters.Parameter import Parameter
+    if isinstance(parameter, (DeclareVariable, Parameter)):
+        return parameter.name
+    return _float_int_or_str(parameter)
+
+
+def mcstasscript_parameter_to_nexus(parameter, index=None):
+    from mcstasscript.helper.mcstas_objects import DeclareVariable
+    from libpyvinyl.Parameters.Parameter import Parameter
+    if isinstance(parameter, DeclareVariable):
+        fields = ('type', 'name', 'value', 'comment')
+    elif isinstance(parameter, Parameter):
+        fields = ('type', 'name', 'value', 'unit', 'comment')
+    else:
+        # str, float, int, list, ... can all be handled directly
+        # (only str *should* be encountered, for %include library lines)
+        name = '__item__' if index is None else f'__item{index}__'
+        return parameter, name
+
+    # filter out empty-string (or anything equivalent to False) valued attributes since they cause problems :/
+    attributes = {f: getattr(parameter, f) for f in fields if hasattr(parameter, f) and getattr(parameter, f)}
+    out = NXfield(**attributes)
+    return out, parameter.name
+
+
+def mcstasscript_parameter_list_to_nx(name, parameters):
+    nx = NXcollection(name=name)
+    for i, p in enumerate(parameters):
+        nxp, name = mcstasscript_parameter_to_nexus(p, index=i)
+        if name:
+            nx[name] = nxp
+    return nx
+
+
+def mcstasscript_instrument_to_nx(instrument):
+    # Follow the McStasScript instrument writing logic:
+    mcinst = NXcollection(name=instrument.name, version=instrument.mccode_version)
+    mcinst['parameters'] = mcstasscript_parameter_list_to_nx('parameters', instrument.parameters)
+    if instrument.dependency_statement:
+        mcinst['dependency'] = instrument.dependency_statement
+    if len(instrument.declare_list):
+        mcinst['declare'] = mcstasscript_parameter_list_to_nx('declare', instrument.declare_list)
+    if len(instrument.user_var_list):
+        mcinst['user_vars'] = mcstasscript_parameter_list_to_nx('user_vars', instrument.user_var_list)
+    # dump the C code -- alternatively we could use https://github.com/eliben/pycparser to parse out results?
+    mcinst['initialize'] = instrument.initialize_section
+    # Same with finally
+    mcinst['finally'] = instrument.finally_section
+
+    return mcinst
+
 
 
