@@ -39,8 +39,8 @@ class EniiusTest(unittest.TestCase):
             self.assertTrue(isinstance(comp1['mcstas']._value, np.ndarray))
             self.assertTrue(isinstance(comp1['mcstas']._value, np.ndarray))
             self.assertEqual(comp1['mcstas']._value.dtype.kind, 'S')
-            self.assertTrue('transforms' in comp1)
-            self.assertTrue(isinstance(comp1['transforms'], nexus.NXtransformations))
+            self.assertTrue('transformations' in comp1)
+            self.assertTrue(isinstance(comp1['transformations'], nexus.NXtransformations))
 
     def test_save_nxspe_from_merlin(self):
         Ei = 180.
@@ -89,7 +89,7 @@ class EniiusTest(unittest.TestCase):
         root = children[0]
         for field in nx_class_fields:
             self.assertTrue(field in root)
-        self.assertTrue('root' == root['name'])
+        self.assertTrue('entry' == root['name'])
         self.assertTrue(len(root['children']) == 1)
         self.assertTrue(len(root['attributes']) == 1)
         self.assertTrue(root['attributes'][0]['values'] == 'NXentry')
@@ -140,7 +140,7 @@ class EniiusTest(unittest.TestCase):
         root = children[0]
         for field in nx_class_fields:
             self.assertTrue(field in root)
-        self.assertTrue('root' == root['name'])
+        self.assertTrue('entry' == root['name'])
         self.assertTrue(len(root['children']) == 1)
         self.assertTrue(len(root['attributes']) == 1)
         self.assertTrue(root['attributes'][0]['values'] == 'NXentry')
