@@ -248,22 +248,22 @@ class McStasComp2NX():
 
         self.nxobj['mcstas'] = json.dumps(kwargs)
 
-        self.nxobj['transforms'] = transforms
+        self.nxobj['transformations'] = transforms
         most_dependent = _outer_transform_dependency(transforms)
 
         for name, insert in _decode_component_eniius_data(mcstas_comp, only_nx=only_nx).items():
             self.nxobj[name] = insert
             # if transforms/name but not, e.g., transforms/name/value
-            if 'transforms' in name and name.count('/') == 1:
+            if 'transformations' in name and name.count('/') == 1:
                 # add the same-level dependnecy link to the just-set transformation, if it doesn't have one already
                 # to allow for possibly overwriting an existing transformation
                 if not hasattr(self.nxobj[name], 'depends_on'):
                     self.nxobj[name].attrs['depends_on'] = most_dependent
                 # since we may have overwritten or added a transformation, work out the dependency chain again
-                most_dependent = _outer_transform_dependency(self.nxobj['transforms'])
+                most_dependent = _outer_transform_dependency(self.nxobj['transformations'])
 
         # set the object level dependency (not an attribute!) only now, in case it changed
-        self.nxobj['depends_on'] = f'transforms/{most_dependent}'
+        self.nxobj['depends_on'] = f'transformations/{most_dependent}'
 
     @classmethod
     def getNXtype(cls, comp):
@@ -472,7 +472,7 @@ class AffineRotate():
             if distance > 1e-5:
                 vec /= distance
             return NXfield(distance, vector=vec, depends_on=self.depends_on,
-                           transformation_type='translation', units='metre')
+                           transformation_type='translation', units='m')
         else:
             # If transformation has a rotation, include translation as offset
             axis, angle = self.axisrot()
@@ -613,7 +613,7 @@ class NXMcStas():
         mcpars = {p: mcstasscript_parameter_name_or_value(getattr(comp, p)) for p in comp.parameter_names if getattr(comp, p) is not None}
 
         nxcomp = McStasComp2NX(comp, order, self.NXtransformations(name), only_nx=only_nx, **mcpars)
-        if nxcomp.nxobj['transforms'] != self.NXtransformations(name):
+        if nxcomp.nxobj['transformations'] != self.NXtransformations(name):
             # the component updated the transforms NXtransformations group
             # invalidate the associated affinelist to avoid using the wrong position?
             self.affinelist[name] = None

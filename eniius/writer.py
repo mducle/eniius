@@ -57,14 +57,16 @@ def conv_types(obj, only_nx=True):
             raise RuntimeError(f'unrecognised type {typ} / {dtyp}')
     else:
         (tp, vl) = (dtyp.name, obj)
-    if tp == 'int64':
-        tp = 'int'
-    elif tp == 'str':
+    if tp == 'str':
         tp = 'string'
     elif tp == 'float64':
-        tp = 'float'
+        tp = 'double'
     elif tp == 'object':
         raise RuntimeError('Internal logical error')
+    elif tp == 'int':
+        tp = 'int64'
+    elif tp == 'float':
+        tp = 'double'
     return tp, vl
 
 
@@ -74,7 +76,7 @@ class Writer:
     """
 
     def __init__(self, nxobj):
-        self.rootname = 'root'
+        self.rootname = 'entry'
         self.data = None
         self.sample = None
         self.nxobj = None
@@ -208,7 +210,7 @@ class Writer:
             fd = {f'number_of_{fnm}': NXfield(np.array(len(idx), dtype='uint64'))}
             fd['detector_number'] = NXfield(detdat[idx,0].astype(np.int32))
             fd['detector_offset'] = NXfield(detdat[idx,1])
-            fd['distance'] = NXfield(detdat[idx,2], units='metre')
+            fd['distance'] = NXfield(detdat[idx,2], units='m')
             fd['polar_angle'] = NXfield(detdat[idx,4], units='degree')
             fd['azimuthal_angle'] = NXfield(detdat[idx,5], units='degree')
             fd['user_table_titles'] = NXfield(titles)

@@ -6,9 +6,9 @@ COMPONENT Origin = Arm()
 COMPONENT slit = Slit(xmin=-1, xmax=0.2, ymin=0.0, ymax=10) AT (0, 0, 10) RELATIVE Origin
 EXTEND %{
 char* slit_eniius_data =
-"{'transforms/x': {'type': 'NXfield', 'value': -0.4,"
+"{'transformations/x': {'type': 'NXfield', 'value': -0.4,"
 "      'attributes': {'units': 'm', 'transformation_type': 'translation', 'vector': [1, 0, 0], 'depends_on': 'slit0'}},"
-" 'transforms/y': {'type': 'NXfield', 'value': 5.0,"
+" 'transformations/y': {'type': 'NXfield', 'value': 5.0,"
 "      'attributes': {'units': 'm', 'transformation_type': 'translation', 'vector': [0, 1, 0]}}"
 "}";
 %}
