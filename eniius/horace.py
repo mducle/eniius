@@ -3,6 +3,7 @@ import scipy.io
 import os
 
 from nexusformat.nexus import *
+from .pychop.Instruments import Instrument
 
 THISFOLDER = os.path.dirname(os.path.realpath(__file__))
 MOD_TABLES = {}
@@ -124,9 +125,11 @@ def get_fermi_data(instrument, freq, chopper):
     return fermi_data
 
 
-def let_instrument(ei, freq=None):
+def let_instrument(ei, freq=None, variant=None):
     if freq is None:
         freq = [80., 240.]
+    if variant is None:
+        variant = 'High flux'
 
     inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
     inst['name'] = NXfield(value='LET', short_name='LET')
@@ -154,21 +157,27 @@ def let_instrument(ei, freq=None):
                                              type='contra_rotating_pair', slit_edges=[-sl, sl], transforms=d_ch1)
     d_ch5 = NXtransformations(CH5_T_AXIS=NXfield(-1.5, transformation_type='translation',
                                                  vector=[0.,0.,1.], depends_on='.', **MU_))
-    sl = np.rad2deg(np.arctan2(0.031, 0.28) / 2.)
+    slot_widths = {'High flux':0.031, 'Intermediate':0.02, 'High Resolution':0.015}
+    sl = np.rad2deg(np.arctan2(slot_widths[variant], 0.28) / 2.)
     inst['mono_chopper'] = NXdisk_chopper(rotation_speed=NXfield(freq[1], units='hertz'), radius=NXfield(0.28, **MU_),
                                           type='contra_rotating_pair', slit_edges=[-sl, sl], transforms=d_ch5)
+    # Gets the allowed energies in multirep mode and adds subsidiary reps as NXcollections
+    pych = Instrument('LET', variant, freq[::-1])
+    other_Eis = []
+    for rep in zip(pych.getAllowedEi(ei), pych.getMultiRepFlux(ei)):
+        if not np.isnan(rep[1][0]) and np.abs(rep[0] - ei) > 0.01:
+            try:
+                hdiv, vdiv = get_let_divergences(rep[0])
+            except RuntimeError:
+                pass
+            inst[f'rep_{rep[0]}'] = NXcollection()
+            inst[f'rep_{rep[0]}/horiz_div'] = NXbeam(data=hdiv)
+            inst[f'rep_{rep[0]}/vert_div'] = NXbeam(data=vdiv)
     return inst
 
 
-def maps_instrument(ei, freq=None, chopper='S'):
-    if freq is None:
-        freq = 600.
-    inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
-    inst['name'] = NXfield(value='MAPS', short_name='MAPS')
-    # Defines the Fermi chopper
-    fermi = inst['fermi']
-    for k, v in get_fermi_data('maps', freq, chopper).items():
-        fermi[k] = v
+def maps_single(ei):
+    inst = {}
     # Defines the Aperture
     d_ap = NXtransformations(AP_AXIS=NXfield(-10.3290, transformation_type='translation',
                                              vector=[0.,0.,1.], depends_on='.', **MU_))
@@ -191,17 +200,31 @@ def maps_instrument(ei, freq=None, chopper='S'):
     return inst
 
 
-def merlin_instrument(ei, freq=None, chopper='G'):
+def maps_instrument(ei, freq=None, chopper='S', rrm=True):
     if freq is None:
         freq = 600.
     inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
-    inst['name'] = NXfield(value='MERLIN', short_name='MER')
+    inst['name'] = NXfield(value='MAPS', short_name='MAPS')
     # Defines the Fermi chopper
-    inst['name'].replace(NXfield(value='MERLIN', short_name='MER'))
-    inst['fermi'].energy = ei
     fermi = inst['fermi']
-    for k, v in get_fermi_data('merlin', freq, chopper).items():
+    for k, v in get_fermi_data('maps', freq, chopper).items():
         fermi[k] = v
+    for k, v in maps_single(ei).items():
+        inst[k] = v
+    # Gets the allowed energies in multirep mode and adds subsidiary reps as NXcollections
+    if rrm:
+        pych = Instrument('MAPS', chopper, freq)
+        other_Eis = []
+        for rep in zip(pych.getAllowedEi(ei), pych.getMultiRepFlux(ei)):
+            if not np.isnan(rep[1][0]) and np.abs(rep[0] - ei) > 0.01:
+                inst[f'rep_{rep[0]}'] = NXcollection()
+                for k, v in merlin_single(rep[0]).items():
+                    inst[f'rep_{rep[0]}/{k}'] = v
+    return inst
+
+
+def merlin_single(ei):
+    inst = {}
     # Defines the Aperture
     d_ap = NXtransformations(AP_AXIS=NXfield(-10.1570, transformation_type='translation',
                                              vector=[0.,0.,1.], depends_on='.', **MU_))
@@ -224,3 +247,26 @@ def merlin_instrument(ei, freq=None, chopper='G'):
     return inst
 
 
+def merlin_instrument(ei, freq=None, chopper='G', rrm=True):
+    if freq is None:
+        freq = 600.
+    inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
+    inst['name'] = NXfield(value='MERLIN', short_name='MER')
+    # Defines the Fermi chopper
+    inst['name'].replace(NXfield(value='MERLIN', short_name='MER'))
+    inst['fermi'].energy = ei
+    fermi = inst['fermi']
+    for k, v in get_fermi_data('merlin', freq, chopper).items():
+        fermi[k] = v
+    for k, v in merlin_single(ei).items():
+        inst[k] = v
+    # Gets the allowed energies in multirep mode and adds subsidiary reps as NXcollections
+    if rrm:
+        pych = Instrument('MERLIN', chopper, freq)
+        other_Eis = []
+        for rep in zip(pych.getAllowedEi(ei), pych.getMultiRepFlux(ei)):
+            if not np.isnan(rep[1][0]) and np.abs(rep[0] - ei) > 0.01:
+                inst[f'rep_{rep[0]}'] = NXcollection()
+                for k, v in merlin_single(rep[0]).items():
+                    inst[f'rep_{rep[0]}/{k}'] = v
+    return inst
