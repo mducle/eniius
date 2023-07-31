@@ -30,7 +30,7 @@ nexusformat.nexus.tree.NXFile._writedata = new_wd
 from nexusformat.nexus import *
 
 
-def conv_types(obj):
+def conv_types(obj, only_nx=True):
     typ = type(obj)
     dtyp = np.dtype(typ)
     if dtyp.name == 'object':
@@ -50,6 +50,9 @@ def conv_types(obj):
                 (tp, vl) = (np.dtype(type(obj.nxdata)).name, val)
             else:
                 (tp, vl) = (obj.dtype, val)
+        elif not only_nx and hasattr(obj, 'to_json_dict'):
+            # Shoe-horn in an object-defined dictionary:
+            tp, vl = None, obj.to_json_dict()
         else:
             raise RuntimeError(f'unrecognised type {typ} / {dtyp}')
     else:
@@ -57,9 +60,13 @@ def conv_types(obj):
     if tp == 'str':
         tp = 'string'
     elif tp == 'float64':
-        tp = 'float'
+        tp = 'double'
     elif tp == 'object':
         raise RuntimeError('Internal logical error')
+    elif tp == 'int':
+        tp = 'int64'
+    elif tp == 'float':
+        tp = 'double'
     return tp, vl
 
 
@@ -69,7 +76,7 @@ class Writer:
     """
 
     def __init__(self, nxobj):
-        self.rootname = 'root'
+        self.rootname = 'entry'
         self.data = None
         self.sample = None
         self.nxobj = None
@@ -99,39 +106,53 @@ class Writer:
             self.nxobj = NXroot()
             self.nxobj[self.rootname] = nxentry
 
+    def to_json(self, filename, indent=4, only_nx=True, absolute_depends_on=False):
+        """Convert a NeXus object to a JSON-compatible dictionary, then write that to file
 
-    def to_json(self, invar):
-        # Converts a NeXus object to a JSON-compatible dictionary
-        outfile, nxobj = (invar, self.nxobj) if isinstance(invar, str) else (None, invar)
+        Parameters:
+            filename: str - where to write the JSON string, '.json' will be appended if not present
+            indent: int - nested JSON indentation depth, default 4
+            only_nx: bool - whether non-NeXus objects found in the tree raise an error, default=True
+            absolute_depends_on: bool - if True expand `depends_on` clauses to absolute paths
+        """
+        if not filename.endswith('.json'):
+            filename = f'{filename}.json'
+        json_dict = self._to_json_dict(self.nxobj, only_nx=only_nx, absolute_depends_on=absolute_depends_on)
+        to_write = json.dumps(dict(children=json_dict), indent=indent)
+        with open(filename, 'w') as file:
+            file.write(to_write)
+
+    def _to_json_dict(self, top_obj, only_nx=True, absolute_depends_on=False):
+        """Recursive transversal of NXobject tree conversion to JSON-compatible dict"""
+        # Note to Greg, depends_on can be data or attribute
         children = []
-        for k, obj in nxobj.items():
+        for name, obj in top_obj.items():
             if hasattr(obj, 'nxclass'):
+                attrs = []
+                if absolute_depends_on and 'depends_on' == name and not obj.nxdata.startswith('/'):
+                    obj.nxdata = _to_absolute(top_obj.nxpath, obj.nxdata)
                 if obj.nxclass == 'NXfield':
-                    typ, val = conv_types(obj.nxdata)
-                    entry = {'module':'dataset',
-                             'config':{'name':k, 'values':val, 'type':typ}}
-                    attrs = []
+                    typ, val = conv_types(obj.nxdata, only_nx)
+                    entry = dict(module='dataset', config=dict(name=name, values=val, type=typ)) if typ else val
                 else:
-                    entry = {'name':k, 'type':'group'}
-                    attrs = [{'name':'NX_class', 'dtype':'string', 'values':obj.nxclass}]
-                    if len(obj._entries) > 0:
-                        entry['children'] = self.to_json(obj)
+                    entry = dict(name=name, type='group')
+                    attrs = [dict(name='NX_class', dtype='string', values=obj.nxclass)]
+                    if len(list(obj)):
+                        entry['children'] = self._to_json_dict(obj, only_nx=only_nx, absolute_depends_on=absolute_depends_on)
+                for n, v in obj.attrs.items():
+                    typ, val = conv_types(v, only_nx)
+                    if absolute_depends_on and n == 'depends_on' and '/' != val[0]:
+                        val = _to_absolute(top_obj.nxpath, val, name)
+                    attrs.append(dict(name=n, dtype=typ, values=val) if typ else val)
+                if len(attrs):
+                    entry['attributes'] = attrs
+            elif not only_nx and hasattr(obj, 'to_json_dict'):
+                # This branch is unreachable because any Python object added to a NXobject gets wrapped in NXfield
+                entry = obj.to_json_dict()
             else:
-                raise RuntimeError(f'unrecognised object key {k}')
-            for n, v in obj.attrs.items():
-                typ, val = conv_types(v)
-                attrs.append({'name':n, 'dtype':typ, 'values':val})
-            if len(attrs) > 0:
-                entry['attributes'] = attrs
+                raise RuntimeError(f'Unrecognized object key {name}')
             children.append(entry)
-        if outfile is not None:
-            if not outfile.endswith('.json'):
-                outfile += '.json'
-            with open(outfile, 'w') as f:
-                f.write(json.dumps({'children':children}, indent=4))
-        else:
-            return children
-
+        return children
 
     def to_nxspe(self, outfile, ei=25, det_file=None):
         if not outfile.endswith('.nxspe'):
@@ -189,7 +210,7 @@ class Writer:
             fd = {f'number_of_{fnm}': NXfield(np.array(len(idx), dtype='uint64'))}
             fd['detector_number'] = NXfield(detdat[idx,0].astype(np.int32))
             fd['detector_offset'] = NXfield(detdat[idx,1])
-            fd['distance'] = NXfield(detdat[idx,2], units='metre')
+            fd['distance'] = NXfield(detdat[idx,2], units='m')
             fd['polar_angle'] = NXfield(detdat[idx,4], units='degree')
             fd['azimuthal_angle'] = NXfield(detdat[idx,5], units='degree')
             fd['user_table_titles'] = NXfield(titles)
@@ -200,3 +221,10 @@ class Writer:
             return fd
         return {'instrument/physical_monitors': NXdetector(**_getsubset(detdat, 'monitors', np.where(detdat[:,3] == 1)[0])),
                 'instrument/physical_detectors': NXdetector(**_getsubset(detdat, 'detectors', np.where(detdat[:,3] != 1)[0]))}
+
+
+def _to_absolute(parent: str, path: str, ourself: str = None):
+    if '.' == path:
+        return '.'
+        # return parent if ourself is None else f'{parent}/{ourself}'
+    return f'{parent}/{path}'

@@ -1,0 +1,18 @@
+DEFINE INSTRUMENT One_Slit_Explicit()
+TRACE
+
+COMPONENT Origin = Arm()
+
+COMPONENT slit = Slit(xmin=-1, xmax=0.2, ymin=0.0, ymax=10) AT (0, 0, 10) RELATIVE Origin
+EXTEND %{
+char* slit_eniius_data =
+"{'transformations/x': {'type': 'NXfield', 'value': -0.4,"
+"      'attributes': {'units': 'm', 'transformation_type': 'translation', 'vector': [1, 0, 0], 'depends_on': 'slit0'}},"
+" 'transformations/y': {'type': 'NXfield', 'value': 5.0,"
+"      'attributes': {'units': 'm', 'transformation_type': 'translation', 'vector': [0, 1, 0]}}"
+"}";
+%}
+
+COMPONENT sample = Incoherent() at (0, 0, 10) RELATIVE slit
+
+END

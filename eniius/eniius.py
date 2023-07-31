@@ -23,12 +23,11 @@ class Eniius:
         writer = Writer(self.nxs_obj)
         writer.to_icp(filename, self.detector_dat)
 
-
-    def to_json(self, filename):
+    def to_json(self, filename, indent=4, only_nx=True, absolute_depends_on=False):
         if not filename.endswith('.json'):
             filename += '.json'
         writer = Writer(self.nxs_obj)
-        writer.to_json(filename)
+        writer.to_json(filename, indent=indent, only_nx=only_nx, absolute_depends_on=absolute_depends_on)
 
 
     def to_nxspe(self, filename):
@@ -75,9 +74,16 @@ class Eniius:
 
 
     @classmethod
-    def from_mcstas(cls, infile, detector_dat=None, ei=None):
+    def from_mcstasscript(cls, mss_obj, detector_dat=None, ei=None, only_nx=True):
+        nxs_obj = NXMcStas(mss_obj).NXinstrument(only_nx=only_nx)
+        nxs_obj['name'] = NXfield(value=mss_obj.name)
+        return cls(nxs_obj, detector_dat, ei)
+
+
+    @classmethod
+    def from_mcstas(cls, infile, detector_dat=None, ei=None, only_nx=True):
         mcstas_obj = get_instr(infile)
-        nxs_obj = NXMcStas(mcstas_obj.component_list).NXinstrument()
+        nxs_obj = NXMcStas(mcstas_obj).NXinstrument(only_nx=only_nx)
         nxs_obj['name'] = NXfield(value=mcstas_obj.name)
         return cls(nxs_obj, detector_dat, ei)
 
