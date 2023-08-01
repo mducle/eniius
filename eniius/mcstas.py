@@ -432,9 +432,14 @@ class AffineRotate():
     def get_euler_angles(rotmat):
         # Calculates the euler angles from a rotation matrix under the McStas convention
         assert (np.abs(np.linalg.det(rotmat)) - 1) < 1.e-5, "Error: transformation is not valid"
-        return np.array([np.degrees(np.arctan2(-rotmat[2,1], rotmat[2,2])),
-                         np.degrees(np.arctan2(rotmat[2,0], np.sqrt(1 - rotmat[2,0]**2))),
-                         np.degrees(np.arctan2(-rotmat[1,0], rotmat[0,0]))])
+        x = np.arctan2(-rotmat[2,1], rotmat[2,2])
+        z = np.arctan2(-rotmat[1,0], rotmat[0,0])
+        cosx = np.cos(x)
+        cosz = np.cos(z)
+        cc, sc, ca, sa = (rotmat[2, 2], -rotmat[2, 1], cosx, np.sin(x)) if abs(cosx) > abs(cosz) else \
+                          (rotmat[0, 0], -rotmat[1, 0], cosz, np.sin(z))
+        cosy = cc / ca if abs(ca) > abs(sa) else sc /sa
+        return np.array([np.degrees(ang) for ang in (x, np.arctan2(rotmat[2, 0], cosy), z)])
 
     @staticmethod
     def rodrigues(axis, angle):
@@ -449,7 +454,7 @@ class AffineRotate():
         # Computes the reverse transformation
         transform = np.eye(4)
         transform[:3, :3] = np.transpose(self.transform[:3, :3])
-        transform[:3, 3] = -self.transform[:3, 3]
+        transform[:3, 3] = -np.matmul(transform[:3, :3], self.transform[:3, 3])
         if depends_on is None:
             depends_on = self.depends_on
         return AffineRotate(transformation_matrix=transform, depends_on=depends_on)
@@ -461,6 +466,15 @@ class AffineRotate():
     @property
     def is_rotation(self):
         return not self.is_translation
+
+    @property
+    def transform(self):
+        return self._transform
+
+    @transform.setter
+    def transform(self, value):
+        assert (np.abs(np.linalg.det(value[:3, :3])) - 1) < 1.e-5, "Error: transformation is not valid"
+        self._transform = value
 
     def NXfield(self):
         # Returns an NXfield object for this component
@@ -490,7 +504,8 @@ def reduce_affine_transforms(affinelist):
     tr1 = affinelist[0]
     for ii in range(1, len(affinelist)):
         tr2 = affinelist[ii]
-        mat = np.matmul(tr1.transform, tr2.transform)
+        # To apply TR1 then TR2 to vector v, need to do: v1 = TR1 * v; v2 = TR2 * v1 = TR2 * TR1 * v
+        mat = np.matmul(tr2.transform, tr1.transform)
         try:
             tr1 = AffineRotate(transformation_matrix=mat, depends_on=tr2.depends_on)
             transform_added = False
@@ -559,7 +574,10 @@ class NXMcStas():
             if relate_at != 'ABSOLUTE' and relate_at not in self.indices:
                 raise RuntimeError("Components can only be positioned relative to previously defined components")
 
-            self.transforms[comp.name] = AffineRotate.from_euler_translation(to_float(comp.ROTATED_data),
+            # Note that in McStas rotations apply to the coordinate system, and not the coordinates:
+            # https://github.com/McStasMcXtrace/McCode/blob/128e9e552171099a97c157b99473ecc38744ffbc/common/lib/share/mccode-r.c#L2842-L2844
+            # As such we need the negative angle rotation
+            self.transforms[comp.name] = AffineRotate.from_euler_translation(-to_float(comp.ROTATED_data),
                                                                              to_float(comp.AT_data),
                                                                              depends_on=relate_at)
             self.depends_on[comp.name] = relate_at
@@ -576,8 +594,7 @@ class NXMcStas():
         # For compatibility, we define NeXus files with the origin there if possible
         samp = [comp for comp in self.components if comp.category == 'samples']
         if len(samp) == 0:
-            warnings.warn("Instrument does not have a sample. Will use the McStas "
-                          "ABSOLUTE positions", warnings.RuntimeWarning)
+            warnings.warn("Instrument does not have a sample. Will use the McStas ABSOLUTE positions")
             self.origin, rev_trans = ('', [])
         else:
             if len(samp) > 1:
