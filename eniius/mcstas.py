@@ -401,7 +401,7 @@ class McStasComp2NX():
             vertices.extend([[-w, -h, z], [-w, h, z], [w, h, z], [w, -h, z]])
 
         faces = []
-        for i in range(n):
+        for i in range(segments):
             j0, j1, j2, j3, j4, j5, j6, j7 = [4 * i + k for k in range(8)]
             # # outside:
             # faces.extend([[j1, j0, j4, j5], [j2, j1, j5, j6], [j3, j2, j6, j7], [j0, j3, j7, j4]])
