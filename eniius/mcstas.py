@@ -484,27 +484,56 @@ class AffineRotate():
 
     @staticmethod
     def rotmat(euler):
+        from numpy import array
         # Computes the Euler rotation matrix in the (improper) XYZ convention used by McStas
         # where a positive angle corresponds to a counter-clockwise rotation
         # https://github.com/McStasMcXtrace/McCode/blob/master/common/lib/share/mccode-r.c#L2521
         cc = np.cos(np.radians(euler))
         ss = np.sin(np.radians(euler))
-        return np.array([[ cc[1]*cc[2], ss[0]*ss[1]*cc[2]+cc[0]*ss[2], ss[0]*ss[2]-cc[0]*ss[1]*cc[2]],
-                         [-cc[1]*ss[2], cc[0]*cc[2]-ss[0]*ss[1]*ss[2], ss[0]*cc[2]+cc[0]*ss[1]*ss[2]],
-                         [       ss[1],                  -ss[0]*cc[1],                   cc[0]*cc[1]]])
+        # mcstas_axes_transform = [[ cc[1]*cc[2], ss[0]*ss[1]*cc[2]+cc[0]*ss[2], ss[0]*ss[2]-cc[0]*ss[1]*cc[2]],
+        #                          [-cc[1]*ss[2], cc[0]*cc[2]-ss[0]*ss[1]*ss[2], ss[0]*cc[2]+cc[0]*ss[1]*ss[2]],
+        #                          [       ss[1],                  -ss[0]*cc[1],                   cc[0]*cc[1]]]
+        # Note that in McStas rotations apply to the coordinate system, and not the coordinates:
+        # https://github.com/McStasMcXtrace/McCode/blob/128e9e552171099a97c157b99473ecc38744ffbc/common/lib/share/mccode-r.c#L2842-L2844
+        # As such we need the negative angle rotation
+        # The McStas convention is to transform the *axes* leaving the particle direction unchanged in a global
+        # coordinate system. Here we are concerned with rotating objects which represent the axes, and therefore
+        # want *their* coordinates to change
+        #
+        # The coordinates transform 'backwards' with all terms containing an odd number of 'ss' of opposite sign:
+        mcstas_coordinate_transform = [
+            [cc[1] * cc[2], ss[0] * ss[1] * cc[2] - cc[0] * ss[2], ss[0] * ss[2] + cc[0] * ss[1] * cc[2]],
+            [cc[1] * ss[2], cc[0] * cc[2] + ss[0] * ss[1] * ss[2], -ss[0] * cc[2] + cc[0] * ss[1] * ss[2]],
+            [-ss[1], ss[0] * cc[1], cc[0] * cc[1]]
+        ]
+        return array(mcstas_coordinate_transform)
 
     @staticmethod
     def get_euler_angles(rotmat):
         # Calculates the euler angles from a rotation matrix under the McStas convention
+        # FIXME this requires synchronization with how angles are treated -- if the rotmat represents a cooridnate
+        # change or an axis change the implementation will be different
         assert (np.abs(np.linalg.det(rotmat)) - 1) < 1.e-5, "Error: transformation is not valid"
-        x = np.arctan2(-rotmat[2,1], rotmat[2,2])
-        z = np.arctan2(-rotmat[1,0], rotmat[0,0])
+
+        # # If the rotmat is an axes rotation:
+        # x = np.arctan2(-rotmat[2, 1], rotmat[2, 2])
+        # z = np.arctan2(-rotmat[1, 0], rotmat[0, 0])
+        # cosx = np.cos(x)
+        # cosz = np.cos(z)
+        # cc, sc, ca, sa = (rotmat[2, 2], -rotmat[2, 1], cosx, np.sin(x)) if abs(cosx) > abs(cosz) else \
+        #                   (rotmat[0, 0], -rotmat[1, 0], cosz, np.sin(z))
+        # cosy = cc / ca if abs(ca) > abs(sa) else sc / sa
+        # return np.array([np.degrees(ang) for ang in (x, np.arctan2(rotmat[2, 0], cosy), z)])
+
+        # If the rotmat is a coordinate rotation:
+        x = np.arctan2(rotmat[2, 1], rotmat[2, 2])
+        z = np.arctan2(rotmat[1, 0], rotmat[0, 0])
         cosx = np.cos(x)
         cosz = np.cos(z)
-        cc, sc, ca, sa = (rotmat[2, 2], -rotmat[2, 1], cosx, np.sin(x)) if abs(cosx) > abs(cosz) else \
-                          (rotmat[0, 0], -rotmat[1, 0], cosz, np.sin(z))
-        cosy = cc / ca if abs(ca) > abs(sa) else sc /sa
-        return np.array([np.degrees(ang) for ang in (x, np.arctan2(rotmat[2, 0], cosy), z)])
+        cc, sc, ca, sa = (rotmat[2, 2], rotmat[2, 1], cosx, np.sin(x)) if abs(cosx) > abs(cosz)\
+            else (rotmat[0, 0], rotmat[1, 0], cosz, np.sin(z))
+        cosy = cc / ca if abs(ca) > abs(sa) else sc / sa
+        return np.array([np.degrees(ang) for ang in (x, np.arctan2(-rotmat[2, 0], cosy), z)])
 
     @staticmethod
     def rodrigues(axis, angle):
@@ -661,10 +690,7 @@ class NXMcStas():
             if relate_at != 'ABSOLUTE' and relate_at not in self.indices:
                 raise RuntimeError("Components can only be positioned relative to previously defined components")
 
-            # Note that in McStas rotations apply to the coordinate system, and not the coordinates:
-            # https://github.com/McStasMcXtrace/McCode/blob/128e9e552171099a97c157b99473ecc38744ffbc/common/lib/share/mccode-r.c#L2842-L2844
-            # As such we need the negative angle rotation
-            self.transforms[comp.name] = AffineRotate.from_euler_translation(-to_float(comp.ROTATED_data),
+            self.transforms[comp.name] = AffineRotate.from_euler_translation(to_float(comp.ROTATED_data),
                                                                              to_float(comp.AT_data),
                                                                              depends_on=relate_at)
             self.depends_on[comp.name] = relate_at
@@ -733,9 +759,9 @@ class NXMcStas():
         # pull together component values (or instrument parameter names) for *defined* parameters
         # -- if a parameter is 'None' at this point, the Component default should be used
         mcpars = {p: mcstasscript_parameter_name_or_value(getattr(comp, p)) for p in comp.parameter_names if getattr(comp, p) is not None}
-
-        nxcomp = McStasComp2NX(comp, order, self.NXtransformations(name), only_nx=only_nx, **mcpars)
-        if nxcomp.nxobj['transformations'] != self.NXtransformations(name):
+        trans = self.NXtransformations(name)
+        nxcomp = McStasComp2NX(comp, order, trans, only_nx=only_nx, **mcpars)
+        if nxcomp.nxobj['transformations'] != trans:
             # the component updated the transforms NXtransformations group
             # invalidate the associated affinelist to avoid using the wrong position?
             self.affinelist[name] = None
