@@ -24,9 +24,11 @@ def get_git_deps():
         for emptydir in ['data', 'examples', 'obsolete', 'share']:
             shutil.rmtree(os.path.join(comps_dst, emptydir))
         shutil.copytree(os.path.join('mcstas-comps', 'share'), os.path.join(comps_dst, 'share'))
-        contrib_dst = os.path.join(comps_dst, 'contrib', 'ISIS_tables')
+        contrib_dst = os.path.join(comps_dst, 'data', 'ISIS_tables')
+        os.mkdir(os.path.join(comps_dst, 'data'))
+        os.mkdir(contrib_dst)
         for face in ['TS1_S01_Maps.mcstas', 'TS1_S04_Merlin.mcstas', 'TS2.imat']:
-            shutil.copy2(os.path.join('mcstas-comps', 'contrib', 'ISIS_tables', face), contrib_dst)
+            shutil.copy2(os.path.join('mcstas-comps', 'data', 'ISIS_tables', face), contrib_dst)
         os.chdir(cwd)
     pychop_dst = os.path.join(cwd, 'eniius', 'pychop')
     if not os.path.exists(pychop_dst):

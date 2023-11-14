@@ -36,7 +36,7 @@ def get_let_divergences(ei, version=2):
 
 
 def load_mcstas_moderator(instrument):
-    modfile = os.path.join(THISFOLDER, 'mcstas-comps', 'contrib', 'ISIS_tables', INST_FACES[instrument])
+    modfile = os.path.join(THISFOLDER, 'mcstas-comps', 'data', 'ISIS_tables', INST_FACES[instrument])
     with open(modfile, 'r') as f:
         dat = f.read().replace('(','').replace(')','').split('\n')
     id0, en, intens = (dat.index(' time '), [], [])
