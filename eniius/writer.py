@@ -214,7 +214,7 @@ class Writer:
             fd['polar_angle'] = NXfield(detdat[idx,4], units='degree')
             fd['azimuthal_angle'] = NXfield(detdat[idx,5], units='degree')
             fd['user_table_titles'] = NXfield(titles)
-            fd['code'] = NXfield(detdat[idx,3])
+            fd['code'] = NXfield(detdat[idx,3].astype(np.int32))
             for j in range(6, detdat.shape[1]):
                 fd[f'user_table_{j-5}'] = NXfield(detdat[idx,j])
             assert len(titles.split(',')) == detdat.shape[1]-6, "Number of titles not commensurate with table width"
