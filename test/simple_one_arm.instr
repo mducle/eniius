@@ -1,0 +1,75 @@
+/********************************************************************************
+*
+* McStas, neutron ray-tracing package
+*         Copyright (C) 1997-2008, All rights reserved
+*         Risoe National Laboratory, Roskilde, Denmark
+*         Institut Laue Langevin, Grenoble, France
+*
+* This file was written by McStasScript, which is a
+* python based McStas instrument generator written by
+* Mads Bertelsen in 2019 while employed at the
+* European Spallation Source Data Management and
+* Software Centre
+*
+* Instrument test_instr
+*
+* %Identification
+* Written by: Python McStas Instrument Generator
+* Date: 15:45:53 on July 31, 2023
+* Origin: ESS DMSC
+* %INSTRUMENT_SITE: Generated_instruments
+*
+*
+* %Parameters
+*
+* %End
+********************************************************************************/
+
+DEFINE INSTRUMENT simple_one_arm (
+)
+
+DECLARE
+%{
+%}
+
+INITIALIZE
+%{
+// Start of initialize for generated test_instr
+%}
+
+TRACE
+COMPONENT source = Source_div(
+ xwidth = 0.1, yheight = 0.05,
+ focus_aw = 1.2, focus_ah = 2.3,
+ lambda0 = 1.5, dlambda = 0.2)
+AT (0, 0, 0) ABSOLUTE
+
+COMPONENT guide = Guide_gravity(
+ w1 = 0.05, h1 = 0.05,
+ w2 = 0.05, h2 = 0.05,
+ l = 8.0, m = 3.5,
+ G = -9.82)
+AT (0, 0, 2) RELATIVE source
+
+COMPONENT sample = PowderN(
+ reflections = "Na2Ca3Al2F14.laz", radius = 0.015,
+ yheight = 0.05)
+AT (0, 0, 8.5) RELATIVE guide
+
+COMPONENT arm = Arm()
+AT (0, 0, 0) RELATIVE sample
+ROTATED (0, 80, 0) RELATIVE sample
+
+COMPONENT monitor = PSD_monitor(
+ nx = 100, ny = 100,
+ filename = "psd.dat", xwidth = 0.05,
+ yheight = 0.08, restore_neutron = 1)
+AT (0, 0, 0) RELATIVE arm
+ROTATED (0, 45, 0) RELATIVE arm
+
+FINALLY
+%{
+// Start of finally for generated test_instr
+%}
+
+END

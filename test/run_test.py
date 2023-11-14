@@ -56,7 +56,6 @@ class EniiusTest(unittest.TestCase):
             self.assertEqual(root['instrument/fermi/energy'].nxvalue, Ei)
             self.assertTrue('sample' in root)
 
-
     def test_save_nxspe_from_let(self):
         Ei = 3.7
         nxspefile = os.path.join(self.tmpdir.name, 'horace.nxspe')
@@ -162,6 +161,31 @@ class EniiusTest(unittest.TestCase):
             self.assertTrue(field in mcstas_children[0])
         named_mcstas_children = [x for x in mcstas_children[0]['children'] if 'name' in x]
         self.assertFalse('declare' in [x['name'] for x in named_mcstas_children])
+
+    def test_one_arm_json_from_mcstas(self):
+        # Tests that coordinate transformation involing an Arm() component is correct
+        jsonfile = os.path.join(self.tmpdir.name, 'mcstas.json')
+        instrfile = os.path.join(os.path.dirname(__file__), 'simple_one_arm.instr')
+        wrapper = eniius.Eniius.from_mcstas(instrfile)
+        wrapper.to_json(jsonfile, absolute_depends_on=True)
+        with open(jsonfile) as file:
+            data = json.load(file)
+        # Address of component is 'entry/instrument/monitor'
+        instrument = data['children'][0]['children'][0]
+        self.assertEqual(instrument['name'], 'instrument')
+        idx = [ii for ii,v in enumerate(instrument['children']) if 'name' in v and v['name'] == 'monitor']
+        self.assertEqual(len(idx), 1)
+        monitor = instrument['children'][idx[0]]
+        idx = [ii for ii,v in enumerate(monitor['children']) if 'name' in v and v['name'] == 'transformations']
+        self.assertEqual(len(idx), 1)
+        transforms = monitor['children'][idx[0]]
+        rot = transforms['children'][0]['config']['values']
+        attrs = {v['name']:v['values'] for v in transforms['children'][0]['attributes']}
+        self.assertTrue(np.abs(rot - 125.0) < 1.e-5)
+        self.assertTrue(np.sum(np.abs(np.array(attrs['vector']) - [0., 1., 0.])) < 1.e-5)
+        self.assertTrue(np.sum(np.abs(np.array(attrs['offset']) - [0., 0., 0.])) < 1.e-5)
+        self.assertEqual(attrs['transformation_type'], 'rotation')
+
 
 if __name__ == '__main__':
     unittest.main()
