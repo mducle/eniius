@@ -187,6 +187,7 @@ class Writer:
 
 
     def to_icp(self, outfile, det_file=None):
+        # Saves a "Mantid" NeXus file compatible with the ISIS Instrument Control Program (ISISICP)
         if not outfile.endswith('.nxs'):
             outfile += '.nxs'
         with nxopen(outfile, 'w') as root:
@@ -196,6 +197,12 @@ class Writer:
             if det_file:
                 for ky, val in self._parse_det(det_file).items():
                     root[f'mantid_workspace_1/{ky}'] = val
+            # Get a list of instrument components to save
+            cmps = ','.join([k for k in self.inst if k != 'name']) + ' '
+            root['mantid_workspace_1/instrument/components_to_save'] = NXnote( \
+                    data=NXfield(cmps),
+                    description='Instrument components to be saved by IBEX/ISISICP',
+                    type='text/plain')
 
 
     def _parse_det(self, det_file):
