@@ -208,11 +208,17 @@ class Writer:
     def _parse_det(self, det_file):
         # Assumes ISIS format; cols=(det#, delta, L2, code, theta, phi, W_xyz, a_xyz, det_123)
         with open(det_file, 'r') as f:
-            titles = [next(f) for x in range(3)][2].split()
+            nskip = 0
+            while True:
+                line = f.readline().strip()
+                if len(np.fromstring(line, sep=' ')) > 2:
+                    break
+                titles = line.split()
+                nskip = nskip + 1
             if titles[0].startswith('det') and titles[1].startswith('no'):
                 titles = titles[1:]
             titles = ','.join(titles[6:])
-        detdat = np.loadtxt(det_file, skiprows=3)
+        detdat = np.loadtxt(det_file, skiprows=nskip)
         def _getsubset(detdat, fnm, idx):
             fd = {f'number_of_{fnm}': NXfield(np.array(len(idx), dtype='uint64'))}
             fd['detector_number'] = NXfield(detdat[idx,0].astype(np.int32))
