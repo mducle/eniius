@@ -208,13 +208,13 @@ class Writer:
     def _parse_det(self, det_file):
         # Assumes ISIS format; cols=(det#, delta, L2, code, theta, phi, W_xyz, a_xyz, det_123)
         with open(det_file, 'r') as f:
-            nskip = 0
-            while True:
+            for nskip in range(10):
                 line = f.readline().strip()
                 if len(np.fromstring(line, sep=' ')) > 2:
                     break
                 titles = line.split()
-                nskip = nskip + 1
+            if nskip == 9:
+                raise RuntimeError('Det file has too many header lines')
             if titles[0].startswith('det') and titles[1].startswith('no'):
                 titles = titles[1:]
             titles = ','.join(titles[6:])
