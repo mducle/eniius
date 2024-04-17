@@ -9,7 +9,8 @@ THISFOLDER = os.path.dirname(os.path.realpath(__file__))
 MOD_TABLES = {}
 LET_TABLES = None
 MU_ = {'units':'metre'}
-INST_FACES = {'maps':'TS1_S01_Maps.mcstas', 'merlin':'TS1_S04_Merlin.mcstas', 'let':'TS2.imat'}
+INST_FACES = {'maps':'TS1_S01_Maps.mcstas', 'merlin':'TS1_S04_Merlin.mcstas', 'let':'TS2.imat',
+              'mari':'TS1_S06_Mari.mcstas'}
 
 
 def get_let_divergences(ei, version=2):
@@ -36,7 +37,7 @@ def get_let_divergences(ei, version=2):
 
 
 def load_mcstas_moderator(instrument):
-    modfile = os.path.join(THISFOLDER, 'mcstas-comps', 'contrib', 'ISIS_tables', INST_FACES[instrument])
+    modfile = os.path.join(THISFOLDER, 'mcstas-comps', 'data', 'ISIS_tables', INST_FACES[instrument])
     with open(modfile, 'r') as f:
         dat = f.read().replace('(','').replace(')','').split('\n')
     id0, en, intens = (dat.index(' time '), [], [])
@@ -91,6 +92,12 @@ def merlin_flux_gain(ei):
     return gain
 
 
+def mari_flux_gain(ei):
+    l = np.sqrt(81.804201263673718 / np.array(ei))
+    gain = 1 + 2.3607 * l + 0.0652 * l**2 + 0.043 * l**3
+    return gain
+
+
 def get_fermi_data(instrument, freq, chopper):
     if instrument.lower() == 'maps':
         if chopper.lower().startswith('s'):
@@ -117,6 +124,19 @@ def get_fermi_data(instrument, freq, chopper):
         else:
             raise RuntimeError(f'Unrecognised chopper "{chopper}" for instrument "{instrument}"')
         fermi_data = {'type':typ, 'distance':NXfield(-1.8, **MU_),
+                      'rotation_speed':NXfield(freq, units='hertz'),
+                      'radius':NXfield(rad, **MU_), 'r_slit':NXfield(rho, **MU_),
+                      'slit':NXfield(dslit, **MU_), 'number':125, 'width':NXfield(0.05, **MU_)}
+    elif instrument.lower() == 'mari':
+        if chopper.lower().startswith('s'):
+            typ, rho, dslit, rad = ('sloppy', 1.3, 0.00228, 0.049)
+        elif chopper.lower().startswith('g'):
+            typ, rho, dslit, rad = ('g', 0.8, 2.0e-4, 0.005)
+        elif chopper.lower().startswith('a'):
+            typ, rho, dslit, rad = ('a', 1.3, 0.00076, 0.049)
+        else:
+            raise RuntimeError(f'Unrecognised chopper "{chopper}" for instrument "{instrument}"')
+        fermi_data = {'type':typ, 'distance':NXfield(-1.7, **MU_),
                       'rotation_speed':NXfield(freq, units='hertz'),
                       'radius':NXfield(rad, **MU_), 'r_slit':NXfield(rho, **MU_),
                       'slit':NXfield(dslit, **MU_), 'number':125, 'width':NXfield(0.05, **MU_)}
@@ -268,5 +288,54 @@ def merlin_instrument(ei, freq=None, chopper='G', rrm=True):
             if not np.isnan(rep[1][0]) and np.abs(rep[0] - ei) > 0.01:
                 inst[f'rep_{rep[0]}'] = NXcollection()
                 for k, v in merlin_single(rep[0]).items():
+                    inst[f'rep_{rep[0]}/{k}'] = v
+    return inst
+
+
+def mari_single(ei):
+    inst = {}
+    # Defines the Aperture
+    d_ap = NXtransformations(AP_AXIS=NXfield(-10.04, transformation_type='translation',
+                                             vector=[0.,0.,1.], depends_on='.', **MU_))
+    fac = np.sqrt(mari_flux_gain(ei))
+    inst['aperture'] = NXslit(x_gap=NXfield(0.09*fac, **MU_), y_gap=NXfield(0.09*fac, **MU_),
+                              transforms=d_ap)
+    # Defines the Source
+    inst['source'] = NXsource(Name='ISIS', type='Spallation Neutron Source',
+                              frequency=NXfield(50, units='hertz'), target_material='W')
+    # Defines the moderator
+    d_mod = NXtransformations(MOD_T_AXIS=NXfield(-11.7, transformation_type='translation',
+                                                 vector=[0.,0.,1.], depends_on='.', **MU_),
+                              MOD_R_AXIS=NXfield(0., transformation_type='rotation',
+                                                 vector=[0.,1.,0.], depends_on='MOD_T_AXIS', units='degree'))
+    pulse_signal, pulse_tof = get_moderator_time_pulse('mari', ei)
+    pulse = NXdata(signal=NXfield(pulse_signal, unit='1/microsecond/meV', name='Intensity'),
+                   axes=NXfield(pulse_tof, unit='microsecond', name='Time'))
+    inst['moderator'] = NXmoderator(type='H20', temperature=NXfield(300, units='kelvin'),
+                                    pulse_shape=pulse, transforms=d_mod)
+    return inst
+
+
+def mari_instrument(ei, freq=None, chopper='G', rrm=None):
+    if freq is None:
+        freq = 600.
+    inst = NXinstrument(fermi=NXfermi_chopper(energy=ei))
+    inst['name'] = NXfield(value='MARI', short_name='MAR')
+    # Defines the Fermi chopper
+    inst['name'].replace(NXfield(value='MARI', short_name='MAR'))
+    inst['fermi'].energy = ei
+    fermi = inst['fermi']
+    for k, v in get_fermi_data('mari', freq, chopper).items():
+        fermi[k] = v
+    for k, v in mari_single(ei).items():
+        inst[k] = v
+    # Gets the allowed energies in multirep mode and adds subsidiary reps as NXcollections
+    if rrm is not None:
+        pych = Instrument('MARI', chopper, freq)
+        other_Eis = []
+        for rep in zip(pych.getAllowedEi(ei), pych.getMultiRepFlux(ei)):
+            if not np.isnan(rep[1][0]) and np.abs(rep[0] - ei) > 0.01:
+                inst[f'rep_{rep[0]}'] = NXcollection()
+                for k, v in mari_single(rep[0]).items():
                     inst[f'rep_{rep[0]}/{k}'] = v
     return inst

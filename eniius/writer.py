@@ -187,6 +187,7 @@ class Writer:
 
 
     def to_icp(self, outfile, det_file=None):
+        # Saves a "Mantid" NeXus file compatible with the ISIS Instrument Control Program (ISISICP)
         if not outfile.endswith('.nxs'):
             outfile += '.nxs'
         with nxopen(outfile, 'w') as root:
@@ -196,16 +197,28 @@ class Writer:
             if det_file:
                 for ky, val in self._parse_det(det_file).items():
                     root[f'mantid_workspace_1/{ky}'] = val
+            # Get a list of instrument components to save
+            cmps = ','.join([k for k in self.inst if k != 'name']) + ' '
+            root['mantid_workspace_1/instrument/components_to_save'] = NXnote( \
+                    data=NXfield(cmps),
+                    description='Instrument components to be saved by IBEX/ISISICP',
+                    type='text/plain')
 
 
     def _parse_det(self, det_file):
         # Assumes ISIS format; cols=(det#, delta, L2, code, theta, phi, W_xyz, a_xyz, det_123)
         with open(det_file, 'r') as f:
-            titles = [next(f) for x in range(3)][2].split()
+            for nskip in range(10):
+                line = f.readline().strip()
+                if len(np.fromstring(line, sep=' ')) > 2:
+                    break
+                titles = line.split()
+            if nskip == 9:
+                raise RuntimeError('Det file has too many header lines')
             if titles[0].startswith('det') and titles[1].startswith('no'):
                 titles = titles[1:]
             titles = ','.join(titles[6:])
-        detdat = np.loadtxt(det_file, skiprows=3)
+        detdat = np.loadtxt(det_file, skiprows=nskip)
         def _getsubset(detdat, fnm, idx):
             fd = {f'number_of_{fnm}': NXfield(np.array(len(idx), dtype='uint64'))}
             fd['detector_number'] = NXfield(detdat[idx,0].astype(np.int32))
@@ -214,7 +227,7 @@ class Writer:
             fd['polar_angle'] = NXfield(detdat[idx,4], units='degree')
             fd['azimuthal_angle'] = NXfield(detdat[idx,5], units='degree')
             fd['user_table_titles'] = NXfield(titles)
-            fd['code'] = NXfield(detdat[idx,3])
+            fd['code'] = NXfield(detdat[idx,3].astype(np.int32))
             for j in range(6, detdat.shape[1]):
                 fd[f'user_table_{j-5}'] = NXfield(detdat[idx,j])
             assert len(titles.split(',')) == detdat.shape[1]-6, "Number of titles not commensurate with table width"
