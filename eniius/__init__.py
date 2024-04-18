@@ -13,4 +13,7 @@ except ModuleNotFoundError as e:
 from . import _version
 __version__ = _version.get_versions()['version']
 
-from .pychop import Instruments as PyChop
+try:
+    from .pychop import Instruments as PyChop
+except ModuleNotFoundError as e:
+    pass

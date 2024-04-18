@@ -1,6 +1,6 @@
 # eniius
 
-<img src="ennius.png" width=150>
+<img src="https://github.com/mducle/eniius/blob/main/ennius.png" width=150>
 
 A program for processing neutron data in the tradition of
 [Homer](http://www.libisis.org/Using_Homer_and_Getting_Started) and
