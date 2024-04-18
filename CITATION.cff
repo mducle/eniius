@@ -9,8 +9,8 @@ authors:
     given-names: "Gregory S."
     orcid: https://orcid.org/0000-0002-2787-8054
 title: "eniius"
-version: "0.1.1"
-date-released: "2023-06-03"
+version: "0.2.0"
+date-released: "2024-04-18"
 license: "GPL-3.0-only"
 repository: "https://github.com/mducle/eniius"
 url: "https://github.com/eniius/eniius"

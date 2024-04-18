@@ -1,3 +1,12 @@
+# [v0.2.0](https://github.com/pace-neutrons/libpymcr/compare/v0.1.1..v0.2.0)
+
+## Updates to Horace, McStas and Nexus-Constructor support
+
+* Horace routines now support multirep and MARI
+* Improve support for McStas-to-NeXus and vice versa conversions
+* Improve support for output for `nexus-constructor` JSON files
+
+
 # [v0.1.1](https://github.com/pace-neutrons/libpymcr/compare/v0.1.0..v0.1.1)
 
 ## Bugfix release
