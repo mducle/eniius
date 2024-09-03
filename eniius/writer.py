@@ -19,10 +19,13 @@ def new_wg(self, group):
 def new_wd(self, data):
     if data._target is None and data._uncopied_data is None and data._memfile is None \
             and (not data.nxfile or data.nxfile.filename == self.filename) \
-            and data.dtype is not None and data.is_string():
-        data._shape = (1,)
-        data._dtype = f'S{len(data._value)}'
-        data._value = np.array(data._value, dtype='S')
+            and data.dtype is not None:
+        if data.is_string():
+            data._shape = (1,)
+            data._dtype = f'S{len(data._value)}'
+            data._value = np.array(data._value, dtype='S')
+        else: # NeXus data must be string or numeric
+            data._value = np.array(data._value, dtype=np.float64)
     return old_wd(self, data)
 nexusformat.nexus.tree.NXFile._writegroup = new_wg
 nexusformat.nexus.tree.NXFile._writedata = new_wd
